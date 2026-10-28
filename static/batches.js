@@ -1,0 +1,61 @@
+'use strict';
+let batchReview=null,batchDirty=false,batchSaving=false,batchPolling=false;
+const batchStates={queued:'대기 중',processing:'인식 중',review:'묶음 확인 필요',saved:'등록 완료'};
+async function pollBatches(){
+ if(user?.role!=='admin'||batchPolling)return;
+ batchPolling=true;
+ try{const rows=await api('batches');const active=rows.filter(b=>b.state!=='saved');$('#batchButton').textContent='일괄 처리 · '+(active.length?active.length+'건 진행/확인':'진행 확인');
+ if($('#batchListDialog').open){$('#batchList').innerHTML=rows.map(b=>`<div class="batch-list-row"><strong>${esc(batchStates[b.state])}</strong><span>${esc(b.created)}${b.state==='saved'?'':` · ${b.done||0}/${b.total}장 완료 · 실패 ${b.failed||0}장`}</span>${b.state==='review'?`<button data-batch="${b.id}">묶음 확인</button>`:''}</div>`).join('')||'<p>대기 중인 작업이 없습니다.</p>';$$('[data-batch]').forEach(b=>b.onclick=()=>openBatchReview(b.dataset.batch));}
+ }catch(e){if($('#batchListDialog').open)$('#batchList').textContent=e.message;}finally{batchPolling=false;}
+}
+async function openBatches(){if(!$('#batchListDialog').open)$('#batchListDialog').showModal();await pollBatches();}
+$('#batchButton').onclick=openBatches;
+setInterval(pollBatches,3000);
+async function openBatchReview(id){try{batchReview=await api('batches/'+id);if(batchReview.state!=='review')return toast('처리가 끝난 뒤 다시 확인하세요.');batchDirty=false;$('#batchConfirmed').checked=false;$('#batchReviewStatus').textContent='자동 제안입니다. 파일명·상단 디자인으로 묶인 페이지는 원본으로 확인하세요.';$('#batchRetry').hidden=!batchReview.pages.some(p=>p.state==='failed');renderBatchGroups();$('#batchReviewDialog').showModal();}catch(e){toast(e.message)}}
+function renderBatchGroups(){
+ const b=batchReview;
+ $('#batchGroups').innerHTML=b.groups.map((g,i)=>`<section class="batch-group" data-group="${i}"><h3>묶음 ${i+1} · ${g.pages.length}장</h3><small>${esc(g.reason||'관리자 수정')}</small><div class="batch-fields">${[['publishers','발행처 (쉼표 구분)'],['title','제목'],['issue','호수'],['date','발행일']].map(([k,label])=>`<label>${label}<input data-field="${k}" ${k==='date'?'type="date"':''} value="${esc(k==='publishers'?(g.meta[k]||[]).join(', '):g.meta[k]||'')}"></label>`).join('')}<label>자료 유형<select data-field="kind">${['홍보물','교섭소식','성명서','담화문'].map(k=>`<option ${g.meta.kind===k?'selected':''}>${k}</option>`).join('')}</select></label><label>자료 분류<select data-field="category"><option value="">발행처 기준 자동 분류</option>${categoryNames.map(k=>`<option ${g.meta.category===k?'selected':''}>${k}</option>`).join('')}</select></label></div><div class="batch-pages">${g.pages.map((pid,n)=>{const p=b.pages.find(p=>p.id===pid);return `<article class="${(g.excluded||[]).includes(pid)?'batch-excluded':''}" draggable="true" data-page-drag="${pid}" tabindex="0" aria-label="${n+1}쪽, 드래그하여 이동"><button type="button" class="batch-exclude" data-exclude="${pid}" aria-label="${(g.excluded||[]).includes(pid)?'게시 제외 취소':'게시에서 제외'}" title="${(g.excluded||[]).includes(pid)?'제외 취소':'게시 제외'}">${(g.excluded||[]).includes(pid)?'↶':'×'}</button><span class="drag-handle">⠿ 끌어서 이동</span>${(g.excluded||[]).includes(pid)?'<b class="excluded-label">게시 제외 · 클릭하여 복원</b>':''}<a draggable="false" href="/api/batch-image/${pid}" target="_blank" rel="noopener"><img draggable="false" src="/api/batch-image/${pid}" alt="${esc(p.name)}"></a><strong>${n+1}쪽 · ${esc(p.name)}</strong><small>${esc(p.status)} · ${p.elapsed}초</small><div><button data-move="${pid}" data-dir="-1" ${n===0?'disabled':''}>← 앞으로</button><button data-move="${pid}" data-dir="1" ${n===g.pages.length-1?'disabled':''}>뒤로 →</button></div><label>페이지 이동<select data-destination="${pid}">${b.groups.map((_,j)=>`<option value="${j}" ${i===j?'selected':''}>묶음 ${j+1}</option>`).join('')}<option value="new">새 묶음으로 분리</option></select></label><details><summary>인식 본문 확인</summary><pre>${esc(p.text||'인식된 본문이 없습니다. 임시등록 후 직접 입력하거나 재인식하세요.')}</pre></details></article>`}).join('')}</div></section>`).join('')+'<div id="batchNewGroupDrop" class="batch-new-drop">여기로 끌어 놓으면 새 묶음으로 분리됩니다.</div>';
+ $$('[data-exclude]').forEach(el=>el.onclick=()=>{const g=b.groups[+el.closest('[data-group]').dataset.group],id=el.dataset.exclude;g.excluded=g.excluded||[];g.excluded=g.excluded.includes(id)?g.excluded.filter(x=>x!==id):[...g.excluded,id];markBatchDirty();renderBatchGroups();});
+ bindBatchDrag();
+ $$('[data-field]').forEach(el=>el.oninput=()=>{const g=b.groups[+el.closest('[data-group]').dataset.group];g.meta[el.dataset.field]=el.dataset.field==='publishers'?el.value.split(',').map(s=>s.trim()).filter(Boolean):el.value;markBatchDirty();});
+ $$('[data-move]').forEach(el=>el.onclick=()=>{const g=b.groups[+el.closest('[data-group]').dataset.group];const n=g.pages.indexOf(el.dataset.move);g.pages.splice(n+Number(el.dataset.dir),0,g.pages.splice(n,1)[0]);markBatchDirty();renderBatchGroups();});
+ $$('[data-destination]').forEach(el=>el.onchange=()=>{const source=b.groups[+el.closest('[data-group]').dataset.group];const pid=el.dataset.destination;let dest;if(el.value==='new'){dest={pages:[],meta:structuredClone(source.meta),reason:'관리자 분리'};b.groups.push(dest);}else dest=b.groups[+el.value];const excluded=(source.excluded||[]).includes(pid);source.excluded=(source.excluded||[]).filter(p=>p!==pid);if(excluded)dest.excluded=[...(dest.excluded||[]),pid];source.pages=source.pages.filter(p=>p!==pid);dest.pages.push(pid);dest.reason='관리자 묶음 수정';b.groups=b.groups.filter(g=>g.pages.length);markBatchDirty();renderBatchGroups();});
+}
+function markBatchDirty(){batchDirty=true;$('#batchConfirmed').checked=false;}
+function closeBatchReview(){if(batchSaving)return;if(batchDirty&&!confirm('저장하지 않은 검토 내용을 버릴까요?'))return;$('#batchReviewDialog').close();batchDirty=false;}
+$('#batchClose').onclick=closeBatchReview;$('#batchReviewDialog').addEventListener('cancel',e=>{e.preventDefault();closeBatchReview()});
+async function saveBatch(action){if(batchSaving)return;const excluded=batchReview.groups.reduce((n,g)=>n+(g.excluded||[]).length,0);if(action!=='review'&&excluded&&!confirm(excluded+'개 페이지를 게시·등록에서 제외합니다. 계속할까요?'))return;if(action==='published'&&!$('#batchConfirmed').checked){const unknown=batchReview.groups.filter(g=>!g.meta.title?.trim()).length;if(!confirm('현재 분류와 페이지 순서로 '+batchReview.groups.length+'개 자료를 바로 게시할까요?'+(unknown?'\n제목이 비어 있는 '+unknown+'개 자료는 ‘제목 미상’으로 게시됩니다.':'')+'\n임시등록 없이 팀원에게 공개됩니다.'))return;}batchSaving=true;$$('#batchReviewDialog button,#batchReviewDialog input,#batchReviewDialog select').forEach(el=>el.disabled=true);try{const r=await api('batches/'+batchReview.id+'/save',{version:batchReview.version,groups:batchReview.groups,action,confirmed:action==='published'||$('#batchConfirmed').checked});batchReview.version=r.version;batchDirty=false;if(r.saved){$('#batchReviewDialog').close();if(action==='published')draftOnly=false;await refresh();await pollBatches();toast(action==='published'?'전체 자료를 게시했습니다.':'전체 자료를 임시등록했습니다. 확인 필요 화면에서 본문을 교정할 수 있습니다.');}else $('#batchReviewStatus').textContent='검토 내용을 저장했습니다. 나중에 다시 열어 이어서 작업할 수 있습니다.';}catch(e){$('#batchReviewStatus').textContent=e.message;}finally{batchSaving=false;$$('#batchReviewDialog button,#batchReviewDialog input,#batchReviewDialog select').forEach(el=>el.disabled=false);renderBatchGroups();}}
+$('#batchSave').onclick=()=>saveBatch('review');$('#batchDraft').onclick=()=>saveBatch('draft');$('#batchPublish').onclick=()=>saveBatch('published');
+$('#batchRetry').onclick=async()=>{if(!confirm('실패한 페이지만 다시 인식합니다. 묶음 제안은 다시 만들어지므로 변경한 묶음 정보는 초기화됩니다. 진행할까요?'))return;try{await api('batches/'+batchReview.id+'/retry',{version:batchReview.version});batchDirty=false;$('#batchReviewDialog').close();await pollBatches();}catch(e){toast(e.message)}};
+window.addEventListener('beforeunload',e=>{if(batchDirty){e.preventDefault();e.returnValue='';}});
+
+let batchDragged=null;
+function moveBatchPage(pid,targetIndex,anchor=null,after=false){
+ if(batchSaving)return;
+ const groups=batchReview.groups,source=groups.find(g=>g.pages.includes(pid));if(!source||anchor===pid)return;
+ let target=targetIndex==='new'?null:groups[Number(targetIndex)];
+ if(!target){target={pages:[],meta:structuredClone(source.meta),reason:'관리자 분리'};groups.push(target);}
+ const excluded=(source.excluded||[]).includes(pid);source.excluded=(source.excluded||[]).filter(p=>p!==pid);if(excluded)target.excluded=[...(target.excluded||[]),pid];
+ source.pages=source.pages.filter(p=>p!==pid);
+ const at=anchor?target.pages.indexOf(anchor):-1;
+ target.pages.splice(at<0?target.pages.length:at+(after?1:0),0,pid);target.reason='관리자 묶음 수정';
+ batchReview.groups=groups.filter(g=>g.pages.length);markBatchDirty();renderBatchGroups();
+}
+function clearBatchDrag(){batchDragged=null;$$('.dragging,.drop-before,.drop-after,.drop-active').forEach(el=>el.classList.remove('dragging','drop-before','drop-after','drop-active'));}
+function bindBatchDrag(){
+ $$('[data-page-drag]').forEach(card=>{
+  card.ondragstart=e=>{if(batchSaving||e.target.closest('input,select,textarea,button')){e.preventDefault();return;}batchDragged=card.dataset.pageDrag;e.dataTransfer.setData('text/plain',batchDragged);e.dataTransfer.effectAllowed='move';card.classList.add('dragging');};
+  card.ondragend=clearBatchDrag;
+  card.ondragover=e=>{if(!batchDragged)return;e.preventDefault();e.stopPropagation();$$('.drop-before,.drop-after').forEach(el=>el.classList.remove('drop-before','drop-after'));card.classList.add(e.clientX>card.getBoundingClientRect().left+card.offsetWidth/2?'drop-after':'drop-before');e.dataTransfer.dropEffect='move';};
+  card.ondrop=e=>{if(!batchDragged)return;e.preventDefault();e.stopPropagation();const pid=batchDragged;clearBatchDrag();moveBatchPage(pid,card.closest('[data-group]').dataset.group,card.dataset.pageDrag,e.clientX>card.getBoundingClientRect().left+card.offsetWidth/2);};
+ });
+ $$('[data-group]').forEach(group=>{
+  group.ondragover=e=>{if(!batchDragged)return;e.preventDefault();e.dataTransfer.dropEffect='move';};
+  group.ondrop=e=>{if(!batchDragged)return;e.preventDefault();const pid=batchDragged;clearBatchDrag();moveBatchPage(pid,group.dataset.group);};
+ });
+ const zone=$('#batchNewGroupDrop');zone.ondragover=e=>{if(!batchDragged)return;e.preventDefault();zone.classList.add('drop-active');};zone.ondragleave=()=>zone.classList.remove('drop-active');zone.ondrop=e=>{if(!batchDragged)return;e.preventDefault();const pid=batchDragged;clearBatchDrag();moveBatchPage(pid,'new');};
+
+}
+$('#batchRegroup').onclick=async()=>{if(batchSaving)return;if(!confirm('저장된 OCR과 상단 디자인으로 묶음을 다시 제안합니다. 현재 묶음과 분류 수정은 초기화됩니다. 진행할까요?'))return;batchSaving=true;$('#batchRegroup').disabled=true;try{await api('batches/'+batchReview.id+'/regroup',{version:batchReview.version});batchReview=await api('batches/'+batchReview.id);batchDirty=false;$('#batchConfirmed').checked=false;renderBatchGroups();$('#batchReviewStatus').textContent='상단 디자인을 포함해 묶음을 다시 제안했습니다. 확인 후 바로 게시할 수 있습니다.';}catch(e){$('#batchReviewStatus').textContent=e.message;}finally{batchSaving=false;$('#batchRegroup').disabled=false;}};
+
+$('#batchReviewDialog').addEventListener('dragover',e=>{if(!batchDragged)return;const dialog=$('#batchReviewDialog'),r=dialog.getBoundingClientRect();if(e.clientY>r.bottom-70)dialog.scrollTop+=20;if(e.clientY<r.top+70)dialog.scrollTop-=20;const row=e.target.closest('.batch-pages');if(row){const b=row.getBoundingClientRect();if(e.clientX>b.right-60)row.scrollLeft+=20;if(e.clientX<b.left+60)row.scrollLeft-=20;}},true);
