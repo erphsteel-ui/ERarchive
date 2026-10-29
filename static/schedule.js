@@ -75,15 +75,17 @@ function scheduleCardHTML(group,e,all=false){
  const meta=[split.actor?`<span class="schedule-actor">[${esc(split.actor)}]</span>`:'',range?`<small class="calendar-range">${esc(range)}</small>`:'',time?`<small class="schedule-time">${esc(time)}</small>`:'',result?`<small class="schedule-result-tag">${esc(result)}</small>`:''].filter(Boolean).join('');
  return `<div class="schedule-event-wrap"><button class="schedule-event schedule-tone-${scheduleTone(e)} ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}"><b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(split.title)}</b>${meta?`<span class="schedule-event-meta">${meta}</span>`:''}</button>${!all&&user.role==='admin'?`<span class="schedule-event-actions"><button type="button" data-event-edit="${esc(e.id)}">수정</button><button type="button" data-event-cancel="${esc(e.id)}">취소</button></span>`:''}</div>`;
 }
+// Monthly card structure restored from a9dd1b9, before the two-week view.
+function scheduleMonthCardHTML(group,e){return `<button class="schedule-event ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}" title="${esc(e.start)} ~ ${esc(e.end)} · ${esc(calendarEventLabel(group,e))}"><b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(calendarEventLabel(group,e))}</b>${calendarRangeLabel(e)?`<small class="calendar-range">${esc(calendarRangeLabel(e))}</small>`:''}</button>`}
 function compactCalendarHTML(all=false){
  const dates=scheduleVisibleDates(all),today=scheduleTodayISO(),firstDate=dates[0];let html='<thead><tr><th class="schedule-org">구분 / 조직·사업장</th>';
- for(const date of dates){const [y,m,day]=date.split('-').map(Number),w=new Date(y,m-1,day).getDay();html+=`<th data-calendar-date="${date}" class="${w===0||w===6?'weekend':''} ${date===today?'schedule-today':''}">${scheduleZoom&&!all&&day===1?m+'/':''}${day}${date===today?'<span class="schedule-today-badge">TODAY</span>':''}<small>${'일월화수목금토'[w]}</small></th>`}html+='</tr></thead><tbody>';
+ for(const date of dates){const [y,m,day]=date.split('-').map(Number),w=new Date(y,m-1,day).getDay();html+=`<th data-calendar-date="${date}" class="${w===0||w===6?'weekend':''} ${scheduleZoom&&!all&&date===today?'schedule-today':''}">${scheduleZoom&&!all&&day===1?m+'/':''}${day}${scheduleZoom&&!all&&date===today?'<span class="schedule-today-badge">TODAY</span>':''}<small>${'일월화수목금토'[w]}</small></th>`}html+='</tr></thead><tbody>';
  for(const group of calendarGroups()){
   const ids=new Set(group.rows.map(r=>r.id)),hasEvents=scheduleData.events.some(e=>ids.has(e.row)&&e.start<=dates[dates.length-1]&&e.end>=firstDate);
-  html+=`<tr class="${hasEvents?'':'schedule-empty-row'}"><th class="schedule-org">${esc(group.label)}</th>`;
+  html+=`<tr class="${scheduleZoom&&!all&&!hasEvents?'schedule-empty-row':''}"><th class="schedule-org">${esc(group.label)}</th>`;
   for(const date of dates){
    const [y,m,day]=date.split('-').map(Number),events=calendarDayEvents(group,date,firstDate),w=new Date(y,m-1,day).getDay(),occupied=scheduleData.events.some(e=>ids.has(e.row)&&e.start<=date&&e.end>=date);
-   html+=`<td data-calendar-date="${date}" data-calendar-group="${esc(group.id)}" data-calendar-empty="${!occupied}" class="${w===0||w===6?'weekend':''} ${date===today?'schedule-today':''}"><div class="calendar-day">${(all?events:events.slice(0,2)).map(e=>scheduleCardHTML(group,e,all)).join('')}${!all&&events.length>2?`<button class="calendar-more" data-day-group="${group.id}" data-day-date="${date}">+${events.length-2}건</button>`:''}${!all&&user.role==='admin'?`<button class="calendar-add" data-add-group="${group.id}" data-add-date="${date}" aria-label="${esc(group.label)} ${date} 일정 추가">＋</button>`:''}</div></td>`;
+   html+=`<td data-calendar-date="${date}" data-calendar-group="${esc(group.id)}" data-calendar-empty="${!occupied}" class="${w===0||w===6?'weekend':''} ${scheduleZoom&&!all&&date===today?'schedule-today':''}"><div class="calendar-day">${(all?events:events.slice(0,2)).map(e=>scheduleZoom&&!all?scheduleCardHTML(group,e,all):scheduleMonthCardHTML(group,e)).join('')}${!all&&events.length>2?`<button class="calendar-more" data-day-group="${group.id}" data-day-date="${date}">+${events.length-2}건</button>`:''}${!all&&user.role==='admin'?`<button class="calendar-add" data-add-group="${group.id}" data-add-date="${date}" aria-label="${esc(group.label)} ${date} 일정 추가">＋</button>`:''}</div></td>`;
   }html+='</tr>';
  }return html+'</tbody>';
 }
@@ -195,7 +197,7 @@ function prepareSchedulePrint(){
  const heading=document.createElement('h1');heading.textContent=(scheduleData.month||scheduleMonth).replace('-','년 ')+'월 노사 주요 일정';sheet.append(heading);
  const table=$('#schedulePanel .schedule-table').cloneNode(true);table.innerHTML=compactCalendarHTML(true);table.classList.remove('compact-calendar');
  table.querySelectorAll('.schedule-empty').forEach(el=>el.remove());
- table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;span.textContent=[el.querySelector('b')?.textContent,...[...el.querySelectorAll('.schedule-event-meta > *')].map(item=>item.textContent)].filter(Boolean).join(' ');el.replaceWith(span)});
+ table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;span.textContent=[el.querySelector('b')?.textContent,...[...el.querySelectorAll('.schedule-event-meta > *, .calendar-range')].filter((item,i,list)=>!list.some(parent=>parent!==item&&parent.contains(item))).map(item=>item.textContent)].filter(Boolean).join(' ');el.replaceWith(span)});
  sheet.append(table);
 }
 window.addEventListener('beforeprint',prepareSchedulePrint);
@@ -240,7 +242,7 @@ function fitReaderSchedule(){
  const available=Math.max(200,window.innerHeight-scroll.getBoundingClientRect().top-20);
  scroll.style.setProperty('--monthly-scroll-height',available+'px');
  if(scheduleZoom)scroll.style.setProperty('--calendar-row-height',Math.max(20,Math.min(80,(available-50)/8))+'px');
- else scroll.style.removeProperty('--calendar-row-height');
+ else if(user?.role!=='admin'&&window.innerWidth>=900){const legacyAvailable=Math.max(300,window.innerHeight-scroll.getBoundingClientRect().top-30);scroll.style.setProperty('--reader-grid-height',legacyAvailable+'px');scroll.style.setProperty('--calendar-row-height',Math.max(64,(legacyAvailable-34)/8)+'px')}else scroll.style.removeProperty('--calendar-row-height');
 }
 let readerResizeFrame=0;
 window.addEventListener('resize',()=>{cancelAnimationFrame(readerResizeFrame);readerResizeFrame=requestAnimationFrame(fitReaderSchedule)});
