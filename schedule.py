@@ -291,10 +291,13 @@ def install(a):
             c.execute("UPDATE settings SET value=? WHERE key='schedule_rows'",(json.dumps(items,ensure_ascii=False),));a.log(c,'일정표 조직 행 변경')
         return jsonify(ok=True)
     @a.app.post('/api/schedule/event')
-    @a.protected(True)
+    @a.protected()
     def schedule_save_event():
         b=request.get_json()
         if not isinstance(b,dict):abort(400)
+        if a.current_role()!='admin':
+            if set(b)-{'title','row','start','end','kind','status','state'} or b.get('state')!='published':abort(403)
+            if b.get('kind')!='일정' or b.get('status')!='예정':abort(403)
         if b.get('source') is not None and not isinstance(b.get('source'),str):abort(400)
         state=b.get('state');eid=b.get('id') or secrets.token_hex(12)
         if state not in ('pending','published','rejected'):abort(400)
@@ -328,6 +331,21 @@ def install(a):
             else:c.execute('INSERT INTO schedule_events VALUES(?,?,NULL,?,?,1,?,?)',(eid,b.get('source') or None,json.dumps(data,ensure_ascii=False),state,a.stamp(),a.stamp()))
             a.log(c,'일정 '+{'published':'확정·게시','pending':'검토 저장','rejected':'제외'}[state],eid)
         return jsonify(ok=True,id=eid)
+    @a.app.post('/api/schedule/result')
+    @a.protected(True)
+    def schedule_result():
+        b=request.get_json(silent=True)
+        options=('진행중','잠정합의','결렬','정회','특이사항 없음')
+        if not isinstance(b,dict) or not isinstance(b.get('id'),str) or type(b.get('version')) is not int or b.get('result') not in options or not isinstance(b.get('note',''),str) or len(b.get('note',''))>180:abort(400)
+        with a.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            old=c.execute("SELECT * FROM schedule_events WHERE id=? AND state='published'",(b['id'],)).fetchone()
+            if not old:abort(404)
+            if old['version']!=b['version']:abort(409)
+            data=json.loads(old['data']);data['result']=b['result'];data['result_note']=b.get('note','').strip()
+            c.execute('UPDATE schedule_events SET data=?,version=version+1,updated=? WHERE id=?',(json.dumps(data,ensure_ascii=False),a.stamp(),b['id']))
+            a.log(c,'일정 결과 변경',b['id'])
+        return jsonify(ok=True,version=old['version']+1)
     def start():
         def loop():
             while True:

@@ -208,11 +208,17 @@ def news_stage(item):
     return {'strike_notice':'파업 예고','strike_start':'파업 돌입','fatal_entrapment':'사고 보도'}.get(kind,'관련 보도')
 
 def macro_topic(item):
-    text=item['title']+' '+item.get('description','')
     actor=issue_actor(item)
-    if actor=='포스코' and item.get('category')=='노사관계' and re.search(r'파업|임단협|교섭|노조|노동조합',text):return ('posco_labor','포스코 임금교섭·무기한 파업 동향')
-    if actor=='현대제철' and item.get('category')=='안전' and re.search(r'사망|숨져|숨진|끼임|산재|중대재해',text):return ('hyundai_safety','현대제철 안전·중대재해 사고')
-    return None
+    category_name=item.get('category')
+    text=item['title']+' '+item.get('description','')
+    if not actor:return None
+    if category_name=='노사관계' and not re.search(r'파업|임단협|교섭|노조|노동조합|쟁의|결의대회',text):return None
+    if category_name=='안전' and not re.search(r'사망|숨져|숨진|끼임|산재|중대재해|폭발|화재|추락',text):return None
+    if category_name not in ('안전','노사관계'):return None
+    label=actor+' '+category_name+' 동향'
+    if actor=='포스코' and category_name=='노사관계':label='포스코 노사관계·교섭 동향'
+    if actor=='현대제철' and category_name=='안전':label='현대제철 안전·중대재해 사고'
+    return ((actor,category_name),label)
 
 def group_articles(records):
     # The representative is fixed first: every member must directly match it.

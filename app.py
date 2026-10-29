@@ -490,6 +490,8 @@ import news
 news.install(sys.modules[__name__])
 import memos
 memos.install(sys.modules[__name__])
+import regulations
+regulations.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import

@@ -27,6 +27,20 @@ class ScheduleTests(unittest.TestCase):
   self.assertEqual(len(visible['events']),1);self.assertNotIn('pending',visible)
   self.assertNotIn('quote',visible['events'][0]);self.assertNotIn('source',visible['events'][0])
   self.assertEqual(self.save(id=candidate['id'],version=1).status_code,409)
+ def test_team_member_can_create_but_not_edit_and_admin_can_set_result(self):
+  with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
+  member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
+  body=dict(title='현장 교섭',row='1',start='2026-10-30',end='',kind='일정',status='예정',state='published')
+  self.assertEqual(self.guest.post('/api/schedule/event',json=body).status_code,401)
+  response=member.post('/api/schedule/event',json=body,headers=headers);self.assertEqual(response.status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
+  self.assertEqual(member.post('/api/schedule/event',json={**body,'id':item['id'],'version':item['version']},headers=headers).status_code,403)
+  result=dict(id=item['id'],version=item['version'],result='잠정합의',note='다음 주 재논의')
+  self.assertEqual(member.post('/api/schedule/result',json=result,headers=headers).status_code,403)
+  self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,200)
+  self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,409)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
+  self.assertEqual((item['result'],item['result_note']),('잠정합의','다음 주 재논의'))
  def test_idempotent_exclusion_and_changed_text(self):
   text='간담회 2026.10.26 10시'
   self.assertEqual(app.ingest_schedule('hwp:hash','회의.hwp','hwp',text),1)

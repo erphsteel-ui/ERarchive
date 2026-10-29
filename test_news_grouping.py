@@ -22,7 +22,7 @@ class CategoryGroupingTests(unittest.TestCase):
   later=dict(a,id='later',published='2026-11-01T01:00:00+00:00')
   self.assertEqual(len(group_articles([a,later])),2)
   x=self.item('x','현대제철 파업 2일 예고');y=self.item('y','현대제철 파업 3일 돌입')
-  self.assertEqual(len(group_articles([x,y])),2)
+  self.assertEqual(len(group_articles([x,y])),1)
 class PreviewTests(unittest.TestCase):
  def test_private_address_is_never_connected(self):
   answer=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('127.0.0.1',80))]

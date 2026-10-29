@@ -25,6 +25,7 @@ class PipelineRules(unittest.TestCase):
  def test_strict_posco_and_other_filter(self):
   self.assertTrue(strict_drop('포스코 장학금 전달','', '기타'))
   self.assertFalse(strict_drop('포스코 노조 파업 돌입','', '노사관계'))
+  self.assertFalse(strict_drop('포스코 입장 발표','임단협 교섭이 이어졌다', '노사관계'))
   self.assertFalse(strict_drop('포스코 장학금 전달','현대제철도 함께 참여', '기타'))
   self.assertTrue(strict_drop('지역 축제 개최','', '기타'))
   self.assertFalse(strict_drop('포항 철강산단 소식','', '기타'))
@@ -32,7 +33,7 @@ class PipelineRules(unittest.TestCase):
   a=self.item('a','포스코 노조 파업 돌입',date='2026-10-28T01:00:00+00:00')
   b=self.item('b','포스코 교섭 사측 입장',date='2026-10-20T01:00:00+00:00')
   c=self.item('c','포스코 임단협 지역 반응',date='2026-10-17T01:00:00+00:00')
-  groups=group_articles([a,b,c]);self.assertEqual(sorted(x['article_count'] for x in groups),[1,2]);self.assertEqual(groups[0]['issue_label'],'포스코 임금교섭·무기한 파업 동향')
+  groups=group_articles([a,b,c]);self.assertEqual(sorted(x['article_count'] for x in groups),[1,2]);self.assertEqual(groups[0]['issue_label'],'포스코 노사관계·교섭 동향')
   a=self.item('a','현대제철 사망 사고 조사')
   b=self.item('b','현대제철 중대재해 노동부 감독',date='2026-10-21T01:00:00+00:00')
   groups=group_articles([a,b]);self.assertEqual(len(groups),1);self.assertEqual(groups[0]['issue_label'],'현대제철 안전·중대재해 사고')
