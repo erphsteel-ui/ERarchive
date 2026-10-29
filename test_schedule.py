@@ -1,4 +1,5 @@
 import io,json,os,tempfile,unittest,datetime
+from unittest.mock import patch
 os.environ.setdefault('ARCHIVE_DATA',tempfile.mkdtemp(prefix='er-schedule-'))
 import app
 from schedule_extract import extract_events,hwp_text
@@ -41,6 +42,25 @@ class ScheduleTests(unittest.TestCase):
   self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,409)
   item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
   self.assertEqual((item['result'],item['result_note']),('잠정합의','다음 주 재논의'))
+ def test_dday_permissions_filter_and_preservation(self):
+  with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
+  member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
+  base=dict(title='기간 일정',row='1',start='2026-11-02',end='2026-11-04',kind='일정',status='예정',state='published',dday=True)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=base).status_code,401)
+  created=member.post('/api/schedule/event',json=base,headers=headers);self.assertEqual(created.status_code,200)
+  self.assertEqual(member.post('/api/schedule/event',json={**base,'dday':'yes'},headers=headers).status_code,400)
+  self.assertEqual(self.save(title='게시 전',state='pending',dday=True).status_code,200)
+  self.assertEqual(self.save(title='취소 일정',status='취소',dday=True).status_code,200)
+  self.assertEqual(self.save(title='일반 일정').status_code,200)
+  with patch('schedule.korean_today',return_value=datetime.date(2026,10,29)):
+   public=self.guest.get('/api/schedule/ddays').json['items'];admin=self.admin.get('/api/schedule/ddays').json['items']
+   self.assertEqual([x['title'] for x in public],['기간 일정']);self.assertEqual([x['id'] for x in public],[x['id'] for x in admin]);self.assertNotIn('source',public[0]);self.assertNotIn('quote',public[0])
+  with patch('schedule.korean_today',return_value=datetime.date(2026,11,2)):self.assertEqual(len(self.guest.get('/api/schedule/ddays').json['items']),1)
+  with patch('schedule.korean_today',return_value=datetime.date(2026,11,3)):self.assertEqual(self.guest.get('/api/schedule/ddays').json['items'],[])
+  item=next(e for e in self.admin.get('/api/schedule?month=2026-11').json['events'] if e['id']==created.json['id'])
+  self.assertEqual(member.post('/api/schedule/event',json={**base,'id':item['id'],'version':item['version']},headers=headers).status_code,403)
+  self.assertEqual(self.save(id=item['id'],version=item['version'],start=base['start'],end=base['end'],dday=False).status_code,200)
+  with patch('schedule.korean_today',return_value=datetime.date(2026,10,29)):self.assertEqual(self.guest.get('/api/schedule/ddays').json['items'],[])
  def test_idempotent_exclusion_and_changed_text(self):
   text='간담회 2026.10.26 10시'
   self.assertEqual(app.ingest_schedule('hwp:hash','회의.hwp','hwp',text),1)

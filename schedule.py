@@ -15,6 +15,8 @@ DEFAULT_ROWS=[{'id':str(i+1),'group':g,'name':n} for i,(g,n) in enumerate([
  ('당사','포항'),('당사','당진'),('당사','인천'),('당사','당냉'),('당사','순천'),
  ('그룹사','현대차'),('그룹사','기아차'),('계열사','ITC'),('계열사','비지회'),('계열사','IMC'),('계열사','ISC'),('노동계','금속노조'),('기타','기타')])]
 
+def korean_today():return dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+
 def event_key(data):
     def norm(value):
         return re.sub(r'\s+', '', unicodedata.normalize('NFKC',value or '')).casefold()
@@ -157,7 +159,25 @@ def install(a):
         finally:lock.release()
     a.scan_schedules=scan;a.ingest_schedule=ingest;a.schedule_lock=lock;a.request_schedule_scan=wake.set
     def event(r):
-        item=json.loads(r['data']);item.update(id=r['id'],source=r['source'],state=r['state'],version=r['version']);return item
+        item=json.loads(r['data']);item.setdefault('dday',False);item.update(id=r['id'],source=r['source'],state=r['state'],version=r['version']);return item
+    @a.app.get('/api/schedule/ddays')
+    @a.protected()
+    def schedule_ddays():
+        admin=a.current_role()=='admin';today=korean_today();items=[]
+        with a.db() as c:
+            sources={r['id']:dict(r) for r in c.execute('SELECT id,name,kind FROM schedule_sources')}
+            for row in c.execute("SELECT * FROM schedule_events WHERE state='published' ORDER BY created,id"):
+                item=event(row)
+                if item.get('dday') is not True or item.get('status')=='취소':continue
+                try:
+                    value=item.get('start','')
+                    if not isinstance(value,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value) or dt.date.fromisoformat(value)<today:continue
+                except ValueError:continue
+                src=sources.get(item['source'],{});item['source_name']=src.get('name','');item['source_kind']=src.get('kind','')
+                if not admin:
+                    for key in ('source','quote','warnings'):item.pop(key,None)
+                items.append(item)
+        return jsonify(items=items)
     @a.app.get('/api/schedule')
     @a.protected()
     def schedule_listing():
@@ -296,7 +316,7 @@ def install(a):
         b=request.get_json()
         if not isinstance(b,dict):abort(400)
         if a.current_role()!='admin':
-            if set(b)-{'title','row','start','end','kind','status','state'} or b.get('state')!='published':abort(403)
+            if set(b)-{'title','row','start','end','kind','status','state','dday'} or b.get('state')!='published':abort(403)
             if b.get('kind')!='일정' or b.get('status')!='예정':abort(403)
         if b.get('source') is not None and not isinstance(b.get('source'),str):abort(400)
         state=b.get('state');eid=b.get('id') or secrets.token_hex(12)
@@ -306,6 +326,10 @@ def install(a):
             if b.get('id') and not old:abort(404)
             if old and b.get('version')!=old['version']:abort(409)
             data=json.loads(old['data']) if old else {'quote':'','warnings':[]}
+            if 'dday' in b:
+                if type(b['dday']) is not bool:abort(400)
+                data['dday']=b['dday']
+            else:data.setdefault('dday',False)
             if state!='rejected':
                 for k,limit in [('title',180),('row',60),('start',10),('end',10),('time',5),('end_time',5),('place',180),('kind',30),('status',30)]:
                     if not isinstance(b.get(k,''),str) or len(b.get(k,''))>limit:abort(400)
