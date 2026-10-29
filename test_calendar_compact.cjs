@@ -4,12 +4,12 @@ const functions=source.slice(source.indexOf('function calendarGroups(){'),source
 const data={rows:[{id:'d',group:'당사',name:'당진'},{id:'s',group:'당사',name:'순천'},{id:'a',group:'계열사',name:'ITC'},{id:'b',group:'계열사',name:'IMC'}],events:[]};
 for(let i=0;i<4;i++)data.events.push({id:String(i),row:'d',start:'2026-10-02',end:'2026-10-03',title:'일정'+i,status:'예정'});
 data.events.push({id:'a1',row:'a',start:'2026-10-02',end:'2026-10-02',title:'교섭',status:'예정'});
-const context=vm.createContext({scheduleData:data,scheduleMonth:'2026-10',user:{role:'viewer'},esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});vm.runInContext(functions,context);
+const context=vm.createContext({scheduleData:data,scheduleMonth:'2026-10',scheduleZoom:false,scheduleAnchor:'',user:{role:'viewer'},esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});vm.runInContext(functions,context);
 assert.equal(vm.runInContext('calendarGroups().length',context),8);
 assert.equal(vm.runInContext("calendarGroups()[0].rows[0].name",context),'순천');
 assert.equal(vm.runInContext("calendarDayEvents(calendarGroups()[2],'2026-10-02').length",context),4);
 const html=vm.runInContext('compactCalendarHTML()',context),printed=vm.runInContext('compactCalendarHTML(true)',context);
-assert.equal((html.match(/<tr>/g)||[]).length,9);
+assert.equal((html.match(/<tr(?: class="[^"]*")?>/g)||[]).length,9);
 assert.equal((html.match(/\+2건/g)||[]).length,1);
 assert.equal((html.match(/data-event=/g)||[]).length,3);
 assert.equal((printed.match(/data-event=/g)||[]).length,5);
@@ -23,3 +23,5 @@ for(const row of [{id:'common',group:'당사',name:'공통'},{id:'p',group:'당�
 const options=vm.runInContext("calendarSelectOptions('a')",context);
 assert.equal((options.match(/<option /g)||[]).length,8);assert(options.includes('value="ac" selected'));assert(!options.includes('ITC'));assert(options.includes('당사 / 공통'));
 console.log('PASS: eight dropdown choices and legacy affiliate automatically maps to the aggregate selection');
+
+context.scheduleZoom=true;context.scheduleAnchor='2026-10-12';data.events.push({id:'range',row:'d',start:'2026-10-03',end:'2026-10-09',title:'교섭',status:'예정',kind:'교섭'});const zoom=vm.runInContext('compactCalendarHTML()',context);assert.equal((zoom.match(/<th data-calendar-date=/g)||[]).length,14);assert(zoom.includes('data-event="range"'));assert(zoom.includes('schedule-tone-labor'));assert.equal((vm.runInContext('compactCalendarHTML(true)',context).match(/<th data-calendar-date=/g)||[]).length,31);assert.equal(vm.runInContext("scheduleTone({title:'간담회'})",context),'meeting');assert.equal(vm.runInContext("scheduleTone({title:'품평회'})",context),'general');console.log('PASS: fourteen-day view includes ongoing events, semantic colors and full-month printing');

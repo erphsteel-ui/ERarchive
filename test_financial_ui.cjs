@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const code=fs.readFileSync(__dirname+'/static/financials.js','utf8'),nodes={};
 const context=vm.createContext({financialData:{companies:[{id:'hyundai-steel',name:'현대제철'}],job:{running:false,error:''},resolved:null,rows:[{year:2025,quarter:4,values:{revenue:12300000000,operating:-100000000,pretax:null,net:0},operating_margin:-.81,net_margin:0,revenue_qoq:null,operating_qoq:null,revenue_yoy:null,status:'available',updated:'now',warnings:['missing'],receipts:['20260301000001'],derived:true}]},financialFilter:{company:'hyundai-steel',fs:'CFS',start:2025,end:2025,mode:'quarterly',quarter:0},financialYear:2026,financialView:'amount',user:{role:'viewer'},$:s=>nodes[s]||(nodes[s]={addEventListener(){}}),esc:s=>String(s??'').replace(/</g,'&lt;'),loadFinancials(){},openFinancialSettings(){},$$:()=>[]});
-vm.runInContext(code.slice(code.indexOf('function financialJobText('),code.indexOf('async function openFinancialSettings(')),context);
+vm.runInContext(code.slice(code.indexOf('const COMPANY_LOGOS='),code.indexOf('async function openFinancialSettings(')),context);
 vm.runInContext('renderFinancials()',context);const html=nodes['#financialPanel'].innerHTML;
 assert(html.includes('123'));assert(html.includes('financial-negative'));assert(html.includes('—'));assert(html.includes('0.0%'));
 assert(html.includes('rcpNo=20260301000001'));assert(!html.includes('id="financialSettings"'));assert(html.includes('분기 누적'));assert(html.includes('연간'));
@@ -22,7 +22,8 @@ let table=vm.runInContext("renderFinancialMatrix(financialData.rows,'quarterly')
 assert(!table.includes('YoY'));assert(!table.includes('QoQ'));assert(table.includes('매출액 대비 이익률'));assert(table.includes('-0.8%'));
 assert.equal(vm.runInContext("financialMargin({values:{revenue:0,operating:10}},'operating')",context),null);
 assert(!html.includes('data-financial-view'));
-assert(html.includes('financial-chart-info'));
+assert(html.includes('financial-chart-info'));assert(html.includes('financial-header-bar'));assert(html.includes('financial-company-logo'));assert(html.includes('HS'));assert(html.includes('현대제철'));assert(!html.includes('financial-company-heading'));
+context.financialFilter.company='posco';context.financialData.companies.push({id:'posco',name:'포스코'});assert(vm.runInContext('financialCompanyHeader(financialData,financialFilter)',context).includes('포스코'));context.financialFilter.company='hyundai-steel';
 assert(html.indexOf('financial-mode-tabs')<html.indexOf('financial-chart-info'));
 assert(html.indexOf('financial-chart-info')<html.indexOf('금액: 조·억 원'));
 assert(!html.includes('저장된 자료를 표시합니다.'));

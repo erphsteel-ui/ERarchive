@@ -1,16 +1,16 @@
 'use strict';
 let readerZoom=1;
-function resetReaderView(){readerZoom=1;$('#detailDialog').classList.remove('info-visible');$('#readerInfoToggle').setAttribute('aria-expanded','false');$('#pageImage').style.width='';$('#pageImage').style.height='';$('#imageWrap').classList.remove('reader-zoomed');$('#imageWrap').scrollTop=0;$('#imageWrap').scrollLeft=0;$('#readerZoomLabel').textContent='전체 맞춤';}
+function resetReaderView(){readerZoom=1;$('#detailDialog').classList.remove('info-visible');$('#readerInfoToggle').setAttribute('aria-expanded','false');$('#pageImage').style.width='';$('#pageImage').style.height='';$('#pageImageSecond').style.width='';$('#pageImageSecond').style.height='';$('#imageWrap').classList.remove('reader-zoomed');$('#imageWrap').scrollTop=0;$('#imageWrap').scrollLeft=0;$('#readerZoomLabel').textContent='전체 맞춤';}
 function setReaderZoom(value){readerZoom=Math.max(1,Math.min(4,value));applyReaderZoom();}
 function applyReaderZoom(){
  if(user?.role==='admin')return;
  const img=$('#pageImage'),wrap=$('#imageWrap');if(!img.naturalWidth||!wrap.clientWidth||!wrap.clientHeight)return;
  wrap.classList.toggle('reader-zoomed',readerZoom>1);
  if(readerZoom===1){img.style.width='';img.style.height='';wrap.scrollTop=0;wrap.scrollLeft=0;}
- else{const scale=Math.min((wrap.clientWidth-16)/img.naturalWidth,(wrap.clientHeight-16)/img.naturalHeight)*readerZoom;img.style.width=Math.max(1,img.naturalWidth*scale)+'px';img.style.height=Math.max(1,img.naturalHeight*scale)+'px';}
+ else{const second=$('#pageImageSecond'),spread=!second.hidden,availableWidth=(wrap.clientWidth-16)/(spread?2:1);for(const image of spread?[img,second]:[img]){if(!image.naturalWidth)continue;const scale=Math.min(availableWidth/image.naturalWidth,(wrap.clientHeight-16)/image.naturalHeight)*readerZoom;image.style.width=Math.max(1,image.naturalWidth*scale)+'px';image.style.height=Math.max(1,image.naturalHeight*scale)+'px';}}
  $('#readerZoomLabel').textContent=readerZoom===1?'전체 맞춤':Math.round(readerZoom*100)+'%';$('#readerZoomOut').disabled=readerZoom===1;$('#readerZoomIn').disabled=readerZoom===4;
 }
-$('#pageImage').addEventListener('load',applyReaderZoom);
+$('#pageImage').addEventListener('load',applyReaderZoom);$('#pageImageSecond').addEventListener('load',applyReaderZoom);
 $('#readerZoomIn').onclick=()=>setReaderZoom(readerZoom+.5);$('#readerZoomOut').onclick=()=>setReaderZoom(readerZoom-.5);$('#readerFit').onclick=()=>setReaderZoom(1);
 $('#readerInfoToggle').onclick=()=>{const visible=$('#detailDialog').classList.toggle('info-visible');$('#readerInfoToggle').setAttribute('aria-expanded',String(visible));};
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>applyReaderZoom()).observe($('#imageWrap'));

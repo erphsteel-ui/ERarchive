@@ -51,14 +51,26 @@ def fetch_news_term(config,term):
 
 def headline_rank(item):
     title=item['title'];text=title+' '+item.get('description','')
-    steel_title=bool(re.search(r'현대\s*제철',title));steel=bool(re.search(r'현대\s*제철',text))
-    labor=bool(re.search(r'노사|노조|노동조합|교섭|임단협|파업',text))
-    priority=4 if steel_title and labor else 3 if steel_title else 2 if steel and labor else 1 if steel or labor else 0
+    if re.search(r'현대\s*제철',text):priority=6
+    elif re.search(r'노사|노조|노동조합|교섭|임단협',text) or (item.get('category')=='노사관계' and not re.search(r'파업',text)):priority=5
+    elif re.search(r'사망|숨져|숨진|사망사고',text):priority=4
+    elif re.search(r'파업',text):priority=3
+    elif re.search(r'실적\s*발표',text):priority=2
+    elif re.search(r'포스코',text,re.I):priority=1
+    else:priority=0
     return (priority,bool(item['important']),item['published'],item['id'])
 
 def headline_groups(records,now):
-    cutoff=(now-dt.timedelta(days=3)).isoformat()
-    return sorted(group_articles([n for n in records if cutoff<=n['published']<=now.isoformat() and not n['excluded'] and (n['relevance']=='keep' or n['important'])]),key=headline_rank,reverse=True)[:4]
+    korea=dt.timezone(dt.timedelta(hours=9));today=now.astimezone(korea).date()
+    candidates={today:[],today-dt.timedelta(days=1):[]}
+    for n in records:
+        try:published=dt.datetime.fromisoformat(n['published'].replace('Z','+00:00'))
+        except (ValueError,TypeError):continue
+        if published.tzinfo is None:continue
+        day=published.astimezone(korea).date()
+        if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']):candidates[day].append(n)
+    selected=candidates[today] or candidates[today-dt.timedelta(days=1)]
+    return sorted(group_articles(selected),key=headline_rank,reverse=True)[:4]
 
 def install(a):
     config_path=a.DATA/'news_config.json';guard=threading.Lock()

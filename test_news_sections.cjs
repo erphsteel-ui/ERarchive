@@ -33,6 +33,6 @@ assert(html.indexOf('스틸데일리')<html.indexOf('페로타임즈'));assert.e
 context.user={role:'admin'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('news-reader-columns'));assert(nodes['#newsPanel'].innerHTML.includes('id="steelPressFetch"'));assert(nodes['#newsPanel'].innerHTML.includes('id="newsSettings"'));
 console.log('PASS: reader left news/right stacked press, admin layout matches viewer, matching five-tab order');
 
-context.user={role:'viewer'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('주요 언론 기사'));assert(!nodes['#newsPanel'].innerHTML.includes('최근 14일 기사만 표시합니다.'));console.log('PASS: renamed major press section and removed explanatory paragraph');
+context.user={role:'viewer'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('언론 기사'));assert(!nodes['#newsPanel'].innerHTML.includes('최근 14일 기사만 표시합니다.'));console.log('PASS: renamed major press section and removed explanatory paragraph');
 
 assert(!html.includes('한국시간'));assert(!html.includes('오늘의 철강'));

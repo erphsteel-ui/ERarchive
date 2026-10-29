@@ -92,7 +92,20 @@ class HeadlineTests(unittest.TestCase):
     c.execute('INSERT INTO news_articles(id,url,title,description,publisher,published,category,important,excluded,relevance,filter_reason,preview) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(pid,url,title,'','example.com',date,category,important,0,'keep','test','ready' if i==0 else ''))
     if i==0:(app.DATA/'news_previews'/(pid+'.jpg')).write_bytes(b'image')
   headlines=self.v.get('/api/news').json['headlines']
-  self.assertEqual([r['title'] for r in headlines],[x[0] for x in examples[:3]])
-  self.assertTrue(headlines[0]['has_image'])
+  self.assertEqual([r['title'] for r in headlines],[x[0] for x in examples[1:3]])
   self.assertEqual(self.v.get('/api/news?q=nomatch&category=安全&offset=100').status_code,400)
   self.assertEqual(self.v.get('/api/news?q=nomatch&category=안전&offset=100').json['headlines'],headlines)
+
+ def test_headlines_korean_day_fallback_and_priority(self):
+  examples=[('현대제철 새 소식','기타','2026-10-27T15:00:00+00:00'),('노사관계 교섭','노사관계','2026-10-28T01:00:00+00:00'),('사망사고 발생','안전','2026-10-28T02:00:00+00:00'),('파업 예고','노사관계','2026-10-28T03:00:00+00:00'),('실적 발표','경영(투자·실적)','2026-10-28T04:00:00+00:00'),('포스코 소식','기타','2026-10-28T05:00:00+00:00'),('전날 기사','기타','2026-10-27T14:59:00+00:00')]
+  priorities=[news.headline_rank({'title':title,'description':'','category':category,'important':0,'published':date,'id':str(i)})[0] for i,(title,category,date) in enumerate(examples[:6])]
+  self.assertEqual(priorities,[6,5,4,3,2,1])
+  with app.db() as c:
+   for i,(title,category,date) in enumerate(examples):
+    c.execute('INSERT INTO news_articles(id,url,title,description,publisher,published,category,important,excluded,relevance,filter_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(i),'https://example.com/'+str(i),title,'','example.com',date,category,0,0,'keep',''))
+  headlines=self.v.get('/api/news').json['headlines']
+  self.assertEqual([x['title'] for x in headlines],[x[0] for x in examples[:4]])
+  with app.db() as c:c.execute("UPDATE news_articles SET excluded=1 WHERE id!='6'")
+  self.assertEqual([x['title'] for x in self.v.get('/api/news').json['headlines']],['전날 기사'])
+  with app.db() as c:c.execute("UPDATE news_articles SET published='2026-10-26T14:59:00+00:00' WHERE id='6'")
+  self.assertEqual(self.v.get('/api/news').json['headlines'],[])
