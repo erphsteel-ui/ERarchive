@@ -22,10 +22,10 @@ let table=vm.runInContext("renderFinancialMatrix(financialData.rows,'quarterly')
 assert(!table.includes('YoY'));assert(!table.includes('QoQ'));assert(table.includes('매출액 대비 이익률'));assert(table.includes('-0.8%'));
 assert.equal(vm.runInContext("financialMargin({values:{revenue:0,operating:10}},'operating')",context),null);
 assert(!html.includes('data-financial-view'));
-assert(html.includes('financial-chart-info'));assert(html.includes('financial-header-bar'));assert(html.includes('financial-company-logo'));assert(html.includes('HS'));assert(html.includes('현대제철'));assert(!html.includes('financial-company-heading'));
+assert(html.includes('financial-chart-info'));assert(html.includes('financial-header-bar'));assert(html.includes('financial-company-logo'));assert(html.includes('/static/logos/hyundai-steel.png'));assert(html.includes('logo.clearbit.com/hyundai-steel.com'));assert(html.includes('google.com/s2/favicons'));assert(html.includes('<svg'));assert(html.includes('현대제철'));assert(!html.includes('financial-company-heading'));
 context.financialFilter.company='posco';context.financialData.companies.push({id:'posco',name:'포스코'});assert(vm.runInContext('financialCompanyHeader(financialData,financialFilter)',context).includes('포스코'));context.financialFilter.company='hyundai-steel';
 assert(html.indexOf('financial-mode-tabs')<html.indexOf('financial-chart-info'));
-assert(html.indexOf('financial-chart-info')<html.indexOf('금액: 조·억 원'));
+assert(html.includes('단위: 조·억 원 (DART 연결 기준)'));assert(!html.includes('차트: 과거 → 최신'));assert(!html.includes('원자료는 원(KRW)으로 보관'));
 assert(!html.includes('저장된 자료를 표시합니다.'));
 assert.equal(vm.runInContext("financialJobText({running:false,error:'수집 오류'})",context),'수집 오류');
 assert(vm.runInContext("financialJobText({running:true,done:1,total:2})",context).includes('수집 중 1/2건'));

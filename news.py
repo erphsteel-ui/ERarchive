@@ -1,10 +1,11 @@
 """Manual Naver news search; credentials stay on the archive server."""
 import datetime as dt
 import hashlib,html,json,os,re,secrets,threading,urllib.request,urllib.parse,urllib.error
+from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from flask import request,jsonify,abort,send_file
-from news_filter import classify,VERSION as FILTER_VERSION
-from news_grouping import category,group_articles,CATEGORIES,CATEGORY_VERSION
+from news_filter import classify,should_drop,demoted,VERSION as FILTER_VERSION
+from news_grouping import category,group_articles,title_overlap,headline_subject,normalized,CATEGORIES,CATEGORY_VERSION
 from news_preview import make_preview
 
 def utc_now():return dt.datetime.now(dt.timezone.utc)
@@ -49,17 +50,13 @@ def fetch_news_term(config,term):
     if not isinstance(data,dict) or not isinstance(data.get('items'),list):raise ValueError('invalid result')
     return data['items']
 
+def headline_company(item):
+    title=item.get('title','')
+    return bool(re.search(r'현대\s*제철|(?:당진|포항|인천|순천)\s*(?:제철소|공장)',title))
 def headline_rank(item):
-    title=item['title'];text=title+' '+item.get('description','')
-    if re.search(r'현대\s*제철',text):priority=6
-    elif re.search(r'노사|노조|노동조합|교섭|임단협',text) or (item.get('category')=='노사관계' and not re.search(r'파업',text)):priority=5
-    elif re.search(r'사망|숨져|숨진|사망사고',text):priority=4
-    elif re.search(r'파업',text):priority=3
-    elif re.search(r'실적\s*발표',text):priority=2
-    elif re.search(r'포스코',text,re.I):priority=1
-    else:priority=0
-    return (priority,bool(item['important']),item['published'],item['id'])
-
+    weights={'안전':50,'노사관계':40,'경영(투자·실적)':30,'정책':20,'기타':10}
+    score=weights.get(item.get('category'),0)+min(item.get('article_count',1)-1,10)*2
+    return (score,bool(item.get('important')),item['published'],item['id'])
 def headline_groups(records,now):
     korea=dt.timezone(dt.timedelta(hours=9));today=now.astimezone(korea).date()
     candidates={today:[],today-dt.timedelta(days=1):[]}
@@ -68,9 +65,32 @@ def headline_groups(records,now):
         except (ValueError,TypeError):continue
         if published.tzinfo is None:continue
         day=published.astimezone(korea).date()
-        if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']):candidates[day].append(n)
+        if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']) and not should_drop(n['title']) and not demoted(n['title'],n.get('description','')):candidates[day].append(n)
     selected=candidates[today] or candidates[today-dt.timedelta(days=1)]
-    return sorted(group_articles(selected),key=headline_rank,reverse=True)[:4]
+    groups=sorted(group_articles(selected),key=headline_rank,reverse=True);chosen=[]
+    def diverse(item):
+        subject=headline_subject(item['title'])
+        return all(not (subject and subject==headline_subject(existing['title'])) and title_overlap(item['title'],existing['title'])<.4 and SequenceMatcher(None,normalized(item['title']),normalized(existing['title'])).ratio()<.85 for existing in chosen)
+    for item in groups:
+        if len(chosen)>=2:break
+        if headline_company(item) and diverse(item):chosen.append(item)
+    for item in groups:
+        if len(chosen)>=4:break
+        if item not in chosen and diverse(item):chosen.append(item)
+    return chosen
+
+def reclassify_news(c):
+    old=c.execute("SELECT value FROM settings WHERE key='news_filter_version'").fetchone()
+    if not old or old[0]!=FILTER_VERSION:
+        for r in c.execute('SELECT id,title,description FROM news_articles').fetchall():
+            relevance,reason=classify(r['title'],r['description'])
+            c.execute('UPDATE news_articles SET relevance=?,filter_reason=? WHERE id=?',(relevance,reason,r['id']))
+        c.execute("INSERT OR REPLACE INTO settings VALUES('news_filter_version',?)",(FILTER_VERSION,))
+    old_category=c.execute("SELECT value FROM settings WHERE key='news_category_version'").fetchone()
+    if not old_category or old_category[0]!=CATEGORY_VERSION:
+        for row in c.execute('SELECT id,title,description FROM news_articles').fetchall():
+            c.execute('UPDATE news_articles SET category=? WHERE id=?',(category(row['title'],row['description']),row['id']))
+        c.execute("INSERT OR REPLACE INTO settings VALUES('news_category_version',?)",(CATEGORY_VERSION,))
 
 def install(a):
     config_path=a.DATA/'news_config.json';guard=threading.Lock()
@@ -81,17 +101,7 @@ def install(a):
         columns={r[1] for r in c.execute('PRAGMA table_info(news_articles)')}
         for name in ('relevance','filter_reason','preview'):
             if name not in columns:c.execute('ALTER TABLE news_articles ADD COLUMN '+name+" TEXT DEFAULT ''")
-        old=c.execute("SELECT value FROM settings WHERE key='news_filter_version'").fetchone()
-        if not old or old[0]!=FILTER_VERSION:
-            for r in c.execute('SELECT id,title,description FROM news_articles').fetchall():
-                relevance,reason=classify(r['title'],r['description'])
-                c.execute('UPDATE news_articles SET relevance=?,filter_reason=? WHERE id=?',(relevance,reason,r['id']))
-            c.execute("INSERT OR REPLACE INTO settings VALUES('news_filter_version',?)",(FILTER_VERSION,))
-        old_category=c.execute("SELECT value FROM settings WHERE key='news_category_version'").fetchone()
-        if not old_category or old_category[0]!=CATEGORY_VERSION:
-            for row in c.execute('SELECT id,title,description FROM news_articles').fetchall():
-                c.execute('UPDATE news_articles SET category=? WHERE id=?',(category(row['title'],row['description']),row['id']))
-            c.execute("INSERT OR REPLACE INTO settings VALUES('news_category_version',?)",(CATEGORY_VERSION,))
+        reclassify_news(c)
         c.execute("UPDATE news_articles SET preview='' WHERE preview='running'")
     preview_lock=threading.Lock();preview_info={'running':False,'done':0,'failed':0}
     preview_folder=a.DATA/'news_previews';preview_folder.mkdir(exist_ok=True)
@@ -194,6 +204,7 @@ def install(a):
                         published=published.isoformat()
                     except (TypeError,ValueError,OverflowError):skipped+=1;continue
                     description=clean(item.get('description'))[:5000]
+                    if should_drop(title):filtered+=1;continue
                     relevance,reason=classify(title,description)
                     changed=c.execute('INSERT OR IGNORE INTO news_articles(id,url,title,description,publisher,published,category,collected,relevance,filter_reason) VALUES(?,?,?,?,?,?,?,?,?,?)',(hashlib.sha256(url.encode()).hexdigest(),url,title,description,urllib.parse.urlsplit(url).hostname,published,category(title,description),a.stamp(),relevance,reason)).rowcount
                     added+=changed
@@ -231,8 +242,10 @@ def install(a):
         sql=' WHERE '+' AND '.join(where) if where else ''
         with a.db() as c:
             records=[dict(r) for r in c.execute('SELECT * FROM news_articles'+sql+' ORDER BY published DESC,id',params)]
+        if not (admin and view=='exclude'):records=[record for record in records if not should_drop(record['title'])]
         for record in records:record['has_image']=record['preview']=='ready' and (preview_folder/(record['id']+'.jpg')).is_file()
         all_grouped=group_articles(records)
+        all_grouped.sort(key=lambda row:demoted(row['title'],row.get('description','')))
         category_counts={c:sum(1 for group in all_grouped if group['category']==c) for c in CATEGORIES}
         category_counts['']=len(all_grouped)
         grouped=[group for group in all_grouped if not cat or group['category']==cat]

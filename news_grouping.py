@@ -1,31 +1,64 @@
 """Title-first categories and conservative, bounded news grouping."""
 import datetime as dt,re,unicodedata
 from difflib import SequenceMatcher
+from news_filter import demoted
 CATEGORIES=['노사관계','경영(투자·실적)','안전','정책','기타']
-CATEGORY_VERSION='2026-10-28.4'
-
+CATEGORY_VERSION='2026-10-29.2'
+CATEGORY_PATTERNS=[
+ ('안전',r'사망|숨져|숨진|끼임|끼[어여]|기계에\s*낀|추락|질식|화재|폭발|중대재해|산재|심정지|작업\s*중지|고용노동부\s*감독'),
+ ('노사관계',r'노조|노동조합|파업|교섭|임단협|임금\s*협상|투쟁|결의대회|지회|비정규직|하청\s*노동자|불법파견|쟁의|노사|해고|구조조정|인력\s*감축'),
+ ('정책',r'노란봉투법|노동특례|국정감사|국감|관세|반덤핑|탄소중립|수출규제|전기요금|산업용\s*전기|법안|정부|기후에너지'),
+ ('경영(투자·실적)',r'실적|영업이익|매출|신용등급|투자|전기로|제철소\s*건설|가동\s*중단|공장\s*폐쇄|감산|인수|매각|판가|열연|후판|철근')]
 def is_opinion(title):
-    return bool(re.search(r'칼럼|사설|기고|논평|성명|담화문|입장문|국회의원|의원.*(?:촉구|호소|입장|주장|의견)|지역사회.*(?:대응|호소)|지역.*(?:상공회의소|경제계).*(?:촉구|호소)',title))
-
+    return bool(re.search(r'칼럼|사설|기고|논평|성명|담화문|입장문',title))
 def category(title,description=''):
-    if is_opinion(title):return '기타' 
-    if re.search(r'기부|성금|기금.*전달|사회공헌',title):return '기타'
-    if re.search(r'교통\s*안전|[Hh]형.*도로|빛나는\s*도로',title) and re.search(r'기부|기금|기탁|성금',title+' '+description):return '기타'
-    def choose(text):
-        for label,pattern in [
-          ('안전',r'중대재해|산업재해|산재|안전사고|심정지|기계에낀|끼인|사망|숨져|숨진|끼[어여]|죽음|화재|폭발|추락|끼임|안전보건|안전점검'),
-          ('노사관계',r'노사|임단협|단체교섭|교섭|파업|임금|단체협약|고용|감원|인력감축|구조조정|해고|희망퇴직|불법파견|원청교섭|정규직'),
-          ('정책',r'관세|반덤핑|무역규제|전기요금|전력요금|탄소|배출권|산업정책|정부정책|법안|특구법|보조금'),
-          ('경영(투자·실적)',r'실적|매출|영업이익|순이익|적자|흑자|실적발표|투자|증설|착공|인수|매각|경영|주가|배당|PBR|NDR|IR|공장|생산|설비|가동'),
-          ('노사관계',r'노조|노동조합|조합원')]:
-            if re.search(pattern,re.sub(r'\s+','',text),re.I):return label
-        return None
-    return choose(title) or choose(description) or '기타'
+    title=unicodedata.normalize('NFKC',title or '');description=unicodedata.normalize('NFKC',description or '')
+    if demoted(title,description):return '기타'
+    # Title matches are decisive, in the specified safety-to-business order.
+    for label,pattern in CATEGORY_PATTERNS:
+        if re.search(pattern,title,re.I):return label
+    scores={label:3*len(re.findall(pattern,title,re.I))+len(re.findall(pattern,description,re.I)) for label,pattern in CATEGORY_PATTERNS}
+    best=max(scores.values(),default=0)
+    return next((label for label,_ in CATEGORY_PATTERNS if scores[label]==best),'기타') if best else '기타'
 
-def normalized(title):
-    t=unicodedata.normalize('NFKC',title).casefold()
-    t=re.sub(r'^\s*\[[^\]]{1,25}\]\s*','',t)
-    return re.sub(r'[^가-힣a-z0-9]','',t)
+ALIASES=[(r'국힘','국민의힘'),(r'노조','노동조합'),(r'임단협','임금협상'),(r'포항제철소','포항'),(r'하청노동자','하청 노동자')]
+COMMON=re.compile(r'현대\s*제철|포스코|노동조합|포항|당진|인천|순천|파업|공장|제철소|투자|프로젝트|계획|기자|뉴스|관련|발표|보도|대한|위한|에서|으로|했다|한다')
+def normalized_words(title):
+    text=unicodedata.normalize('NFKC',title or '').casefold()
+    text=re.sub(r'\[[^\]]*\]',' ',text)
+    for pattern,replacement in ALIASES:text=re.sub(pattern,replacement,text)
+    return text
+def normalized(title):return re.sub(r'[^가-힣a-z0-9]','',normalized_words(title))
+def title_features(title):
+    text=COMMON.sub(' ',normalized_words(title))
+    words=re.findall(r'[가-힣]{2,}|[a-z]{2,}|\d+(?:\.\d+)?(?:명|년|조|억|월|일|%)?',text)
+    features=set()
+    for word in words:
+        features.add('w:'+word)
+        if len(word)>2 and not re.search(r'\d',word):features.update('b:'+word[i:i+2] for i in range(len(word)-1))
+    return features
+def title_similarity(left,right):
+    a,b=title_features(left),title_features(right)
+    def weight(feature):return 4 if feature.startswith('w:') and re.search(r'\d',feature) else 2 if feature.startswith('w:') else 1
+    return sum(map(weight,a&b))/sum(map(weight,a|b)) if a and b else 0.0
+def title_overlap(left,right):
+    a,b=title_features(left),title_features(right)
+    return len(a&b)/len(a|b) if a and b else 0.0
+def named_person(title):
+    text=normalized_words(title)
+    match=re.search(r'([가-힣]{2,4})\s*(?:국회의원|의원|지회장|위원장|국민의힘)',text)
+    if match:return match.group(1)
+    for name in ('최병욱','이상휘'):
+        if name in text:return name
+    return ''
+def headline_subject(title):
+    person=named_person(title)
+    if person:return person
+    text=COMMON.sub(' ',normalized_words(title))
+    generic={'노사관계','안전사고','실적발표','산업계','현대자동차','기업소식'}
+    return next((word for word in re.findall(r'[가-힣]{3,}|[a-z]{3,}',text) if word not in generic),'')
+def number_units(title):
+    return {(unit,value) for value,unit in re.findall(r'(\d+(?:\.\d+)?)\s*(년간|명|조|억|월|일|%)',title)}
 def companies(title):
     title=title.replace('현대자동차','현대차').replace('기아자동차','기아').replace('현대케피코','케피코')
     return frozenset(re.findall(r'현대제철|포스코|현대차|기아|현대모비스|현대위아|현대로템|현대트랜시스|동국제강|세아제강|케피코',title))
@@ -79,38 +112,38 @@ def event_kind(item):
     return ''
 
 def similar(a,b):
-    if a['category']!=b['category']:return False
     try:
         elapsed=abs((dt.datetime.fromisoformat(a['published'])-dt.datetime.fromisoformat(b['published'])).total_seconds())
         if elapsed>72*3600:return False
     except (ValueError,TypeError):return False
     at,bt=a['title'],b['title'];ca,cb=companies(at),companies(bt);pa,pb=places(at),places(bt)
-    if ca!=cb or (pa and pb and pa!=pb):return False
-    # Commentary and responses keep their individual viewpoints.
-    if is_opinion(at) or is_opinion(bt):
-        sa,sb=opinion_speaker(at),opinion_speaker(bt)
-        if sa and sb:
-            if sa!=sb:return False
-            return SequenceMatcher(None,normalized(at),normalized(bt)).ratio()>=.65
-        return re.sub(r'\s+','',at)==re.sub(r'\s+','',bt)
+    if ca and cb and ca.isdisjoint(cb):return False
+    if pa and pb and pa.isdisjoint(pb):return False
+    if is_opinion(at)!=is_opinion(bt):return False
+    if is_opinion(at) and is_opinion(bt):
+        ma=re.search(r'\[([^\]]+)\]',at);mb=re.search(r'\[([^\]]+)\]',bt)
+        if ma and mb and ma.group(1)!=mb.group(1):return False
+    person_a,person_b=named_person(at),named_person(bt)
+    if person_a and person_b and person_a!=person_b:return False
+    na,nb=number_units(at),number_units(bt)
+    for unit in {u for u,_ in na}&{u for u,_ in nb}:
+        if {v for u,v in na if u==unit}.isdisjoint({v for u,v in nb if u==unit}):return False
     ka,kb=event_kind(a),event_kind(b)
-    if ka and ka==kb and ca:
+    if ka and kb and ka==kb:
         da,db=event_date(a,ka),event_date(b,kb)
         if da and db and da!=db:return False
-        if ka=='strike_notice' and da and da==db:return True
-        if ka=='fatal_entrapment' and pa and pa==pb:
-            if da and db:return da==db
-            # Without a confirmed incident date, require matching headline text.
-    # Numbers remain a guard for events that could not be resolved confidently.
-    if set(re.findall(r'\d+(?:\.\d+)?',at))!=set(re.findall(r'\d+(?:\.\d+)?',bt)):return False
-    ta,tb=topic(at),topic(bt)
-    if ta and tb and ta!=tb:return False
-    if ka!=kb and (ka or kb):return False
-    na,nb=normalized(at),normalized(bt)
-    if SequenceMatcher(None,na,nb).ratio()>=.80:return True
-    da,db=normalized(a.get('description','')),normalized(b.get('description',''))
-    if ca and len(da)>=60 and len(db)>=60 and SequenceMatcher(None,da,db).ratio()>=.82:return True
-    return bool(ta and ta==tb and ca and pa and pa==pb and ta=='cleanup')
+        if da and db and da==db and ca and cb and not ca.isdisjoint(cb) and (not pa or not pb or not pa.isdisjoint(pb)):return True
+    # A specific local event can bridge different wording, but never a generic labor topic.
+    if ca and cb and not ca.isdisjoint(cb) and pa and pb and pa==pb:
+        common_a,common_b=common_event(a),common_event(b)
+        if common_a and common_b and common_a['key']==common_b['key'] and common_a['key'][0]=='community':return True
+        if topic(at)==topic(bt)=='cleanup':return True
+    score=title_similarity(at,bt)
+    if a.get('category')!=b.get('category') and score<.65:return False
+    if score>=.45:return True
+    af,bf=title_features(at),title_features(bt)
+    shared={x for x in af&bf if x.startswith('w:') and person_a not in x}
+    return bool(person_a and person_a==person_b and len(shared)>=2)
 def issue_actor(item):
     title=companies(item['title'])
     if len(title)==1:return next(iter(title))
@@ -172,53 +205,22 @@ def news_stage(item):
     return {'strike_notice':'파업 예고','strike_start':'파업 돌입','fatal_entrapment':'사고 보도'}.get(kind,'관련 보도')
 
 def group_articles(records):
-    # Known incident dates form anchors first. Undated followups join only one possible issue.
-    annotated=[(item,issue_info(item)) for item in records]
-    groups=[];issue_groups={};fallback={}
-    for item,info in sorted(annotated,key=lambda pair:bool(pair[1] and pair[1]['date']),reverse=True):
-        if info:
-            candidates=issue_groups.setdefault(info['key'],[])
-            matches=[g for g in candidates if (not info['date'] or g['date']==info['date']) and (info.get('kind','사망사고')=='사망사고' or g.get('kind','사망사고') in ('사망사고',info.get('kind')))]
-            target=matches[0] if len(matches)==1 else next((g for g in candidates if not g['date'] and not info['date'] and g.get('kind')==info.get('kind','사망사고')),None)
-            if target is None:
-                target=dict(items=[],date=info['date'],label=info['label'],kind=info.get('kind','사망사고'));groups.append(target);candidates.append(target)
-            if target['kind']=='사망사고' and info.get('kind'):target['kind']=info['kind']
-            target['items'].append(item)
-        else:
-            key=(item['category'],companies(item['title']))
-            candidates=fallback.setdefault(key,[])
-            target=next((g for g in candidates if any(similar(item,member) for member in g['items'])),None)
-            if target is None:target=dict(items=[],date=None,label='');groups.append(target);candidates.append(target)
-            target['items'].append(item)
-    # A truncated excerpt may omit the site. Link only when exactly one current accident fits.
-    for group in list(groups):
-        if group['label']:continue
-        for item in list(group['items']):
-            title=item['title'];actor=issue_actor(item)
-            if item['category']!='안전' or is_opinion(title) or not actor or re.search(r'\d+년\s*(?:간|\d+명)|사각지대',title):continue
-            if not re.search(r'끼임|끼[어여]|기계에\s*낀|심정지|사망|숨',title):continue
-            site=current_place(item);date=event_date(item,'fatal_entrapment')
-            matches=[]
-            for key,candidates in issue_groups.items():
-                if key[0]!='safety' or key[1]!=actor or (site and tuple(sorted(site))!=key[2]):continue
-                for candidate in candidates:
-                    if date and candidate['date']!=date:continue
-                    if re.search(r'끼임|끼[어여]|기계에\s*낀',title) and candidate.get('kind') not in ('끼임','사망사고'):continue
-                    matches.append(candidate)
-            if len(matches)==1:
-                matches[0]['items'].append(item);group['items'].remove(item)
-        if not group['items']:groups.remove(group)
+    # The representative is fixed first: every member must directly match it.
+    ordered=sorted(records,key=lambda n:(bool(n.get('important')),n['published'],n['id']),reverse=True)
+    groups=[]
+    for item in ordered:
+        target=next((g for g in groups if similar(item,g[0])),None)
+        if target is None:groups.append([item])
+        else:target.append(item)
     result=[]
-    for issue in groups:
-        group=sorted(issue['items'],key=lambda n:(n['published'],n['id']),reverse=True)
-        representative=max(group,key=lambda n:(bool(n['important']),n['published'],n['id']))
+    for group in groups:
+        representative=group[0];ordered_group=sorted(group,key=lambda n:(n['published'],n['id']),reverse=True)
         row=dict(representative)
-        row['related_articles']=[dict(n,stage=news_stage(n)) for n in group if n['id']!=row['id']]
-        row['timeline']=[dict({k:n[k] for k in ('id','title','published','url','publisher') if k in n},stage=news_stage(n)) for n in group]
-        row['issue_label']=issue['label']+((' · '+issue['date'].strftime('%m/%d')) if issue['date'] else '')
-        row['article_count']=len(group);row['group_latest']=group[0]['published']
+        row['related_articles']=[dict(n,stage=news_stage(n)) for n in ordered_group if n['id']!=row['id']]
+        row['timeline']=[dict({k:n[k] for k in ('id','title','published','url','publisher') if k in n},stage=news_stage(n)) for n in ordered_group]
+        row['issue_label']='';row['article_count']=len(group);row['group_latest']=ordered_group[0]['published']
         if not row.get('has_image'):
-            image=next((n for n in group if n.get('has_image')),None)
+            image=next((n for n in ordered_group if n.get('has_image')),None)
             if image:row['image_id']=image['id']
         result.append(row)
     return sorted(result,key=lambda r:(r['group_latest'],r['id']),reverse=True)

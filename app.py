@@ -64,7 +64,7 @@ def protected(admin=False):
 @app.after_request
 def headers(r):
     r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='DENY'
-    r.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    r.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' blob: https://logo.clearbit.com https://www.google.com; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
     return r
 @app.errorhandler(400)
 @app.errorhandler(401)

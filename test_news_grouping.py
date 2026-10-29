@@ -22,7 +22,7 @@ class CategoryGroupingTests(unittest.TestCase):
   later=dict(a,id='later',published='2026-11-01T01:00:00+00:00')
   self.assertEqual(len(group_articles([a,later])),2)
   x=self.item('x','현대제철 파업 2일 예고');y=self.item('y','현대제철 파업 3일 돌입')
-  self.assertEqual(len(group_articles([x,y])),1)
+  self.assertEqual(len(group_articles([x,y])),2)
 class PreviewTests(unittest.TestCase):
  def test_private_address_is_never_connected(self):
   answer=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('127.0.0.1',80))]
@@ -71,9 +71,9 @@ class EventGroupingTests(CategoryGroupingTests):
   c=self.article('c','포스코 노조 11월 2일 무기한 파업 선언','임금 인상과 성과급이 쟁점이다.')
   self.assertEqual(len(group_articles([a,b,c])),1)
   different=self.article('d','포스코 노조 무기한 파업 예고','11월 3일부터 파업')
-  self.assertEqual(len(group_articles([a,different])),1)
+  self.assertEqual(len(group_articles([a,different])),2)
   update=self.article('u','포스코 노사 교섭 타결…파업 철회','11월 2일 파업을 철회했다.')
-  self.assertEqual(len(group_articles([a,update])),1)
+  self.assertEqual(len(group_articles([a,update])),2)
  def test_accident_same_date_not_age_number(self):
   a=self.article('a','현대제철 당진공장서 협력업체 근로자 기계에 끼어 숨져','지난 18일 오전 10시 43분 40대 노동자가 설비를 보수하다 숨졌다.', '2026-10-19T01:00:00+00:00')
   b=self.article('b','현대제철 당진공장서 40대 노동자 설비에 끼여 숨져','오늘(18일) 오전 10시 40분 사고가 발생했다.', '2026-10-18T12:00:00+00:00')
@@ -83,7 +83,7 @@ class EventGroupingTests(CategoryGroupingTests):
   self.assertEqual(len(group_articles([a,different])),2)
  def test_views_are_other_and_do_not_merge(self):
   for title in ['[경상칼럼]포스코 노조, 철강 위기 앞에 무엇을 지킬 것인가','이상휘 국회의원, 포스코 노사에 대화 촉구','금속노조, 포스코 파업 관련 성명 발표','포스코 파업에 지역사회 대응 나서']:
-   self.assertEqual(category(title),'기타')
+   self.assertEqual(category(title),'노사관계')
   a=self.article('a','[칼럼]포스코 파업과 지역경제')
   b=self.article('b','[기고]포스코 파업과 지역경제')
   # Different opinions stay separate even when bracket-stripped titles match.
@@ -94,21 +94,20 @@ class IssueTimelineTests(CategoryGroupingTests):
   a=self.item('a','포스코 노사 임금교섭 난항','2026-10-15T01:00:00+00:00')
   b=dict(self.item('b','28차례 교섭에도 평행선…무기한 파업 예고'),description='한국노총 금속노련 포스코노동조합은 다음 달 파업을 예고했다.')
   c=self.item('c','포스코 임단협 타결…파업 철회','2026-10-28T02:00:00+00:00')
-  result=group_articles([a,b,c]);self.assertEqual(len(result),1)
-  self.assertEqual(result[0]['id'],'c');self.assertEqual([x['id'] for x in result[0]['timeline']],['c','b','a'])
-  self.assertEqual(result[0]['timeline'][0]['stage'],'파업 철회')
+  result=group_articles([a,b,c]);self.assertEqual(len(result),3)
+  self.assertTrue(all(len(x['timeline'])==1 for x in result))
   other=self.item('d','포스코 하청노조 원청교섭 요구')
   self.assertEqual(len(group_articles([a,other])),2)
  def test_accident_followup_and_conflicting_dates(self):
   a=dict(self.item('a','현대제철 당진공장 노동자 끼임 사망','2026-10-18T01:00:00+00:00'),description='오늘(18일) 사고가 발생했다.')
   follow=dict(self.item('b','현대제철 당진 끼임 사망에 노조 반발','2026-10-24T01:00:00+00:00'),description='지난 18일 하청 노동자가 숨졌다.')
   unknown=dict(self.item('c','현대제철 당진 끼임 사망 안전대책 요구'),description='안전관리 책임을 물었다.')
-  self.assertEqual(len(group_articles([unknown,follow,a])),1)
+  self.assertEqual(len(group_articles([unknown,follow,a])),3)
   another=dict(a,id='d',description='오늘(20일) 사고가 발생했다.')
   groups=group_articles([a,unknown,another]);self.assertEqual(len(groups),3)
  def test_opinion_stays_separate_from_issue(self):
   a=self.item('a','포스코 노사 임금교섭 난항');b=self.item('b','[성명] 포스코 임금교섭 관련 입장')
-  self.assertEqual(len(group_articles([a,b])),2);self.assertEqual(b['category'],'기타')
+  self.assertEqual(len(group_articles([a,b])),2);self.assertEqual(b['category'],'노사관계')
 
 class UserNewsExamples(CategoryGroupingTests):
  def test_same_donation_different_headline_and_amount_expression(self):
@@ -129,4 +128,4 @@ class UserNewsExamples(CategoryGroupingTests):
   a=dict(self.item('a','현대제철 당진공장 기계 끼임 사망'),description='지난 18일 40대 노동자가 끼어 숨졌다.')
   b=dict(self.item('b','현대제철 당진제철소 사망사고 노조 반발'),description='안전 대책을 요구했다.')
   c=dict(self.item('c','현대제철 당진 하청노동자 끼임 사망'),description='사망 사고를 규탄했다.')
-  self.assertEqual(len(group_articles([a,b,c])),1)
+  self.assertEqual(len(group_articles([a,b,c])),3)

@@ -25,3 +25,10 @@ assert.equal((options.match(/<option /g)||[]).length,8);assert(options.includes(
 console.log('PASS: eight dropdown choices and legacy affiliate automatically maps to the aggregate selection');
 
 context.scheduleZoom=true;context.scheduleAnchor='2026-10-12';data.events.push({id:'range',row:'d',start:'2026-10-03',end:'2026-10-09',title:'교섭',status:'예정',kind:'교섭'});const zoom=vm.runInContext('compactCalendarHTML()',context);assert.equal((zoom.match(/<th data-calendar-date=/g)||[]).length,14);assert(zoom.includes('data-event="range"'));assert(zoom.includes('schedule-tone-labor'));assert.equal((vm.runInContext('compactCalendarHTML(true)',context).match(/<th data-calendar-date=/g)||[]).length,31);assert.equal(vm.runInContext("scheduleTone({title:'간담회'})",context),'meeting');assert.equal(vm.runInContext("scheduleTone({title:'품평회'})",context),'general');console.log('PASS: fourteen-day view includes ongoing events, semantic colors and full-month printing');
+assert.equal(vm.runInContext("scheduleSplitTitle({id:'group'},'포스코, 하청노동자교섭').actor",context),'포스코');
+assert.equal(vm.runInContext("scheduleSplitTitle({id:'group'},'현대차 본교섭').title",context),'본교섭');
+assert.equal(vm.runInContext("scheduleSplitTitle({id:'common'},'포스코, 하청노동자교섭').actor",context),'');
+assert.equal(vm.runInContext("scheduleSplitTitle({id:'group'},'포스코').actor",context),'');
+assert.equal(vm.runInContext("scheduleTitleForSave({actor:'포스코',title:'포스코, 교섭'})",context),'포스코, 교섭');
+assert.equal(vm.runInContext("scheduleTitleForSave({actor:'',title:'기존, 제목'})",context),'기존, 제목');
+console.log('PASS: actor parsing is limited to applicable rows and preserves unchanged titles');

@@ -1,14 +1,24 @@
 """Conservative ER relevance rules, calibrated with user-labelled headlines."""
 import re,unicodedata
-VERSION='2026-10-28.1'
+VERSION='2026-10-29.2'
 CORE=re.compile(r'현대\s*제철|포스코|POSCO',re.I)
+DROP=re.compile(r'레드\s*엔젤스|여자\s*축구|양궁단|스틸러스|\[\s*특징주\s*\]|목표가\s*[↑↓]|부고|인사')
+PROMOTION=re.compile(r'견학|장학금|성료|봉사\s*활동|기부|캠페인|모집|개선\s*활동')
+OTHER_COMPANY=re.compile(r'현대\s*모비스|포스코\s*퓨처엠|현대\s*자동차|현대차|기아|현대\s*위아|현대\s*트랜시스|현대\s*로템|동국\s*제강|세아\s*제강')
+def should_drop(title):return bool(DROP.search(unicodedata.normalize('NFKC',title or '')))
+def demoted(title,description=''):
+    title=unicodedata.normalize('NFKC',title or '')
+    description=unicodedata.normalize('NFKC',description or '')
+    return bool(PROMOTION.search(title) or (OTHER_COMPANY.search(title) and not re.search(r'현대\s*제철',title) and re.search(r'현대\s*제철',description)))
 ISSUE=re.compile(r'노조|노사|교섭|임단협|임금|단체협약|파업|고용|감원|인력\s*(?:감축|감소)|구조조정|해고|희망퇴직|정리해고|공장|생산|가동|폐쇄|폐업|투자|증설|산재|중대재해|사망|화재|관세|전기요금|전력비|탄소|실적|영업이익|매출|적자|흑자|경영|원청|하청|불법파견|노동|불황|위기|전환|매각|인수')
 def classify(title,description=''):
     t=unicodedata.normalize('NFKC',title or '')
     d=unicodedata.normalize('NFKC',description or '')
+    if should_drop(t):return 'exclude','스포츠·특징주·부고·인사 제외'
     # Roundups stay excluded even when the excerpt mentions the company.
     if re.search(r'오늘의\s*주요\s*일정|오늘의\s*경기|손바닥\s*뉴스|위클립|\d+월\s*\d+주\s*주요\s*제조업\s*전망|\[산업소식\]|금주의.*의회',t):
         return 'exclude','종합 일정·뉴스 모음·정기 전망'
+    if demoted(t,d):return 'keep','낮은 우선순위 · 단순 행사·홍보 또는 타사 중심 기사'
     # Keep actual industrial issues, including columns about POSCO labor relations.
     if CORE.search(t) and ISSUE.search(t):return 'keep','현대제철·포스코의 노사·경영·산업 현안'
     if re.search(r'철강|제철|조선',t) and re.search(r'인력\s*감축|감원|고용|구조조정|해고|희망퇴직|임단협|교섭|파업|불황|관세|전기요금|탄소',t):
