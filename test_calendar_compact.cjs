@@ -34,3 +34,4 @@ assert.equal(vm.runInContext("scheduleTitleForSave({actor:'',title:'기존, 제�
 console.log('PASS: actor parsing is limited to applicable rows and preserves unchanged titles');
 
 context.scheduleAnchor='2026-10-29';const cross=vm.runInContext('compactCalendarHTML()',context);assert(cross.includes('data-calendar-date="2026-10-29"'));assert(cross.includes('data-calendar-date="2026-11-11"'));assert.equal((cross.match(/<th data-calendar-date=/g)||[]).length,14);console.log('PASS: next fourteen days cross month boundaries');
+assert(source.includes("let scheduleZoom=true,scheduleAnchor=''"));context.scheduleMonth='2026-12';context.scheduleAnchor='2026-12-25';const yearEnd=vm.runInContext('compactCalendarHTML()',context);assert(yearEnd.includes('data-calendar-date="2027-01-07"'));assert.equal((yearEnd.match(/<th data-calendar-date=/g)||[]).length,14);console.log('PASS: two-week view is the default and crosses year boundaries');

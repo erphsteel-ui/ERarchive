@@ -1,7 +1,11 @@
 """Offline, versioned archive of administrator-supplied legal and workplace texts."""
 import datetime as dt
+import io
 import re
+import zipfile
+import xml.etree.ElementTree as ET
 from flask import abort, jsonify, request
+from schedule_extract import hwp_text
 
 CATEGORIES = {
     'labor_act': '근로기준법',
@@ -13,6 +17,31 @@ CATEGORIES = {
 }
 CHAPTER = re.compile(r'^\s*(제\s*[0-9０-９일이삼사오육칠팔구십백천]+\s*장(?:\s*의\s*\d+)?)(.*)$')
 ARTICLE = re.compile(r'^\s*(제\s*([0-9０-９]+)\s*조(?:\s*의\s*([0-9０-９]+))?)(.*)$')
+FILE_LIMIT=15*1024*1024
+
+def docx_text(raw):
+    """Extract paragraphs in document order with a bounded, local-only XML parser."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            info=archive.getinfo('word/document.xml')
+            if info.file_size>16*1024*1024:raise ValueError('문서 본문이 너무 큽니다.')
+            xml=archive.read(info)
+        if b'<!DOCTYPE' in xml.upper() or b'<!ENTITY' in xml.upper():raise ValueError('지원하지 않는 문서 구조입니다.')
+        root=ET.fromstring(xml)
+    except (zipfile.BadZipFile,KeyError,ET.ParseError,RuntimeError,OSError) as exc:
+        raise ValueError('DOCX 파일을 읽지 못했습니다. 암호 또는 손상 여부를 확인하세요.') from exc
+    ns='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+    lines=[]
+    for paragraph in root.iter(ns+'p'):
+        parts=[]
+        for node in paragraph.iter():
+            if node.tag==ns+'t' and node.text:parts.append(node.text)
+            elif node.tag==ns+'tab':parts.append('\t')
+            elif node.tag in (ns+'br',ns+'cr'):parts.append('\n')
+        value=''.join(parts).strip()
+        if value:lines.append(value)
+    if not lines:raise ValueError('본문 텍스트가 없습니다. 이미지 문서는 텍스트로 변환해 주세요.')
+    return '\n'.join(lines)
 
 def parse_articles(text):
     """Keep every input line, and split only explicit Korean chapter/article headings."""
@@ -60,6 +89,23 @@ def install(a):
         entry=dict(row) if row else None
         if entry:entry['articles']=parse_articles(entry['body'])
         return jsonify(categories=CATEGORIES,entry=entry,versions=meta)
+    @a.app.get('/api/regulations/search')
+    @a.protected()
+    def regulation_search():
+        query=request.args.get('q','').strip()
+        if not query or len(query)>200:abort(400)
+        with a.db() as c:
+            entries=[dict(row) for row in c.execute('''SELECT r.category,r.version,r.title,r.effective_date,r.source,r.created,r.body
+                FROM regulation_versions r WHERE r.version=(SELECT MAX(v.version) FROM regulation_versions v WHERE v.category=r.category)''')]
+        matches=[];registered=set()
+        for entry in entries:
+            registered.add(entry['category'])
+            articles=[article for article in parse_articles(entry.pop('body')) if query.casefold() in (article['chapter']+'\n'+article['text']).casefold()]
+            if articles:
+                entry['category_name']=CATEGORIES[entry['category']];entry['articles']=articles;matches.append(entry)
+        order={key:i for i,key in enumerate(CATEGORIES)}
+        matches.sort(key=lambda x:order[x['category']])
+        return jsonify(items=matches,missing=[{'category':key,'name':value} for key,value in CATEGORIES.items() if key not in registered])
     @a.app.get('/api/regulations/history')
     @a.protected()
     def regulation_history():
@@ -91,3 +137,20 @@ def install(a):
             c.execute('INSERT INTO regulation_versions VALUES(?,?,?,?,?,?,?,?)',(b['category'],version+1,b['title'].strip(),b['effective_date'],b['source'].strip(),b['body'],a.stamp(),a.session.get('user','')))
             a.log(c,'법령·규정 원문 등록',b['category'])
         return jsonify(ok=True,version=version+1)
+    @a.app.post('/api/regulations/extract')
+    @a.protected(True)
+    def regulation_extract():
+        uploaded=request.files.get('file')
+        if not uploaded or not uploaded.filename:abort(400)
+        filename=uploaded.filename.lower()
+        if not filename.endswith(('.hwp','.docx')):return jsonify(error='HWP 또는 DOCX 파일을 선택하세요.'),400
+        raw=uploaded.stream.read(FILE_LIMIT+1)
+        if len(raw)>FILE_LIMIT:return jsonify(error='파일은 15MB 이하여야 합니다.'),413
+        try:
+            text=hwp_text(raw) if filename.endswith('.hwp') else docx_text(raw)
+            if len(text)>2000000:raise ValueError('추출한 본문이 너무 깁니다.')
+        except (ValueError, OSError, KeyError, EOFError) as exc:
+            return jsonify(error=str(exc)[:200] or '파일을 읽지 못했습니다.'),400
+        except Exception:
+            return jsonify(error='파일을 읽지 못했습니다. 형식과 암호 설정을 확인하세요.'),400
+        return jsonify(text=text)
