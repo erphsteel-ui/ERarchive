@@ -114,8 +114,11 @@ def event_kind(item):
 def similar(a,b):
     try:
         elapsed=abs((dt.datetime.fromisoformat(a['published'])-dt.datetime.fromisoformat(b['published'])).total_seconds())
-        if elapsed>72*3600:return False
+        if elapsed>10*24*3600:return False
     except (ValueError,TypeError):return False
+    topic_a,topic_b=macro_topic(a),macro_topic(b)
+    if topic_a and topic_a==topic_b:return True
+    if elapsed>72*3600:return False
     at,bt=a['title'],b['title'];ca,cb=companies(at),companies(bt);pa,pb=places(at),places(bt)
     if ca and cb and ca.isdisjoint(cb):return False
     if pa and pb and pa.isdisjoint(pb):return False
@@ -204,6 +207,13 @@ def news_stage(item):
     kind=event_kind(item)
     return {'strike_notice':'파업 예고','strike_start':'파업 돌입','fatal_entrapment':'사고 보도'}.get(kind,'관련 보도')
 
+def macro_topic(item):
+    text=item['title']+' '+item.get('description','')
+    actor=issue_actor(item)
+    if actor=='포스코' and item.get('category')=='노사관계' and re.search(r'파업|임단협|교섭|노조|노동조합',text):return ('posco_labor','포스코 임금교섭·무기한 파업 동향')
+    if actor=='현대제철' and item.get('category')=='안전' and re.search(r'사망|숨져|숨진|끼임|산재|중대재해',text):return ('hyundai_safety','현대제철 안전·중대재해 사고')
+    return None
+
 def group_articles(records):
     # The representative is fixed first: every member must directly match it.
     ordered=sorted(records,key=lambda n:(bool(n.get('important')),n['published'],n['id']),reverse=True)
@@ -218,7 +228,8 @@ def group_articles(records):
         row=dict(representative)
         row['related_articles']=[dict(n,stage=news_stage(n)) for n in ordered_group if n['id']!=row['id']]
         row['timeline']=[dict({k:n[k] for k in ('id','title','published','url','publisher') if k in n},stage=news_stage(n)) for n in ordered_group]
-        row['issue_label']='';row['article_count']=len(group);row['group_latest']=ordered_group[0]['published']
+        macro=macro_topic(representative)
+        row['issue_label']=macro[1] if macro and len(group)>1 else '';row['article_count']=len(group);row['group_latest']=ordered_group[0]['published']
         if not row.get('has_image'):
             image=next((n for n in ordered_group if n.get('has_image')),None)
             if image:row['image_id']=image['id']

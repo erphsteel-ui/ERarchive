@@ -2,7 +2,7 @@ import datetime as dt, unittest
 from unittest.mock import patch
 from email.utils import format_datetime
 import test_news,app,news
-from news_filter import should_drop,demoted
+from news_filter import should_drop,demoted,strict_drop
 from news_grouping import category,group_articles,title_similarity
 
 class PipelineRules(unittest.TestCase):
@@ -22,6 +22,20 @@ class PipelineRules(unittest.TestCase):
   self.assertEqual(category('정부 관세 대응','제철소 투자'),'정책')
   self.assertEqual(category('전기로 투자','지역사회'),'경영(투자·실적)')
   self.assertEqual(category('새 소식','노조 파업 교섭, 투자 발표'),'노사관계')
+ def test_strict_posco_and_other_filter(self):
+  self.assertTrue(strict_drop('포스코 장학금 전달','', '기타'))
+  self.assertFalse(strict_drop('포스코 노조 파업 돌입','', '노사관계'))
+  self.assertFalse(strict_drop('포스코 장학금 전달','현대제철도 함께 참여', '기타'))
+  self.assertTrue(strict_drop('지역 축제 개최','', '기타'))
+  self.assertFalse(strict_drop('포항 철강산단 소식','', '기타'))
+ def test_macro_topics_are_bounded_by_representative_and_ten_days(self):
+  a=self.item('a','포스코 노조 파업 돌입',date='2026-10-28T01:00:00+00:00')
+  b=self.item('b','포스코 교섭 사측 입장',date='2026-10-20T01:00:00+00:00')
+  c=self.item('c','포스코 임단협 지역 반응',date='2026-10-17T01:00:00+00:00')
+  groups=group_articles([a,b,c]);self.assertEqual(sorted(x['article_count'] for x in groups),[1,2]);self.assertEqual(groups[0]['issue_label'],'포스코 임금교섭·무기한 파업 동향')
+  a=self.item('a','현대제철 사망 사고 조사')
+  b=self.item('b','현대제철 중대재해 노동부 감독',date='2026-10-21T01:00:00+00:00')
+  groups=group_articles([a,b]);self.assertEqual(len(groups),1);self.assertEqual(groups[0]['issue_label'],'현대제철 안전·중대재해 사고')
  def test_normalization_and_blackhole(self):
   pairs=[('최병욱 국힘 입당 지역발전협의회 개최','최병욱 국민의힘 입당 지역발전협의회 개최'),('하청노동자 사망…5년간 7명 숨져','5년간 7명 숨져 하청노동자 사망')]
   for a,b in pairs:self.assertEqual(len(group_articles([self.item('a',a),self.item('b',b)])),1)
@@ -41,7 +55,7 @@ class PipelineRules(unittest.TestCase):
   result=news.headline_groups(records,dt.datetime(2026,10,28,6,tzinfo=dt.timezone.utc))
   self.assertEqual(len(result),4);self.assertGreaterEqual(sum(news.headline_company(x) for x in result),2)
   self.assertNotIn('e',[x['id'] for x in result]);self.assertEqual(result[2]['id'],'c')
-  one=self.item('f','최병욱 국힘 지역발전협의회 발언','기타');two=self.item('g','최병욱 국민의힘 지역발전협의회 소식','기타')
+  one=self.item('f','현대제철 최병욱 국힘 지역발전협의회 발언','기타');two=self.item('g','현대제철 최병욱 국민의힘 지역발전협의회 소식','기타')
   result=news.headline_groups([one,two],dt.datetime(2026,10,28,6,tzinfo=dt.timezone.utc));self.assertEqual(len(result),1)
 
 class PipelineCollection(unittest.TestCase):

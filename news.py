@@ -4,7 +4,7 @@ import hashlib,html,json,os,re,secrets,threading,urllib.request,urllib.parse,url
 from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from flask import request,jsonify,abort,send_file
-from news_filter import classify,should_drop,demoted,VERSION as FILTER_VERSION
+from news_filter import classify,should_drop,strict_drop,demoted,VERSION as FILTER_VERSION
 from news_grouping import category,group_articles,title_overlap,headline_subject,normalized,CATEGORIES,CATEGORY_VERSION
 from news_preview import make_preview
 
@@ -65,7 +65,7 @@ def headline_groups(records,now):
         except (ValueError,TypeError):continue
         if published.tzinfo is None:continue
         day=published.astimezone(korea).date()
-        if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']) and not should_drop(n['title']) and not demoted(n['title'],n.get('description','')):candidates[day].append(n)
+        if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']) and not should_drop(n['title']) and not strict_drop(n['title'],n.get('description',''),n.get('category')) and not demoted(n['title'],n.get('description','')):candidates[day].append(n)
     selected=candidates[today] or candidates[today-dt.timedelta(days=1)]
     groups=sorted(group_articles(selected),key=headline_rank,reverse=True);chosen=[]
     def diverse(item):
@@ -204,7 +204,7 @@ def install(a):
                         published=published.isoformat()
                     except (TypeError,ValueError,OverflowError):skipped+=1;continue
                     description=clean(item.get('description'))[:5000]
-                    if should_drop(title):filtered+=1;continue
+                    if should_drop(title) or strict_drop(title,description,category(title,description)):filtered+=1;continue
                     relevance,reason=classify(title,description)
                     changed=c.execute('INSERT OR IGNORE INTO news_articles(id,url,title,description,publisher,published,category,collected,relevance,filter_reason) VALUES(?,?,?,?,?,?,?,?,?,?)',(hashlib.sha256(url.encode()).hexdigest(),url,title,description,urllib.parse.urlsplit(url).hostname,published,category(title,description),a.stamp(),relevance,reason)).rowcount
                     added+=changed
@@ -242,7 +242,7 @@ def install(a):
         sql=' WHERE '+' AND '.join(where) if where else ''
         with a.db() as c:
             records=[dict(r) for r in c.execute('SELECT * FROM news_articles'+sql+' ORDER BY published DESC,id',params)]
-        if not (admin and view=='exclude'):records=[record for record in records if not should_drop(record['title'])]
+        if not (admin and view=='exclude'):records=[record for record in records if not should_drop(record['title']) and not strict_drop(record['title'],record.get('description',''),record.get('category'))]
         for record in records:record['has_image']=record['preview']=='ready' and (preview_folder/(record['id']+'.jpg')).is_file()
         all_grouped=group_articles(records)
         all_grouped.sort(key=lambda row:demoted(row['title'],row.get('description','')))

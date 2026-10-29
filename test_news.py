@@ -96,7 +96,7 @@ class HeadlineTests(unittest.TestCase):
   self.assertEqual(self.v.get('/api/news?q=nomatch&category=안전&offset=100').json['headlines'],headlines)
 
  def test_headlines_korean_day_fallback_and_priority(self):
-  examples=[('현대제철 새 소식','기타','2026-10-27T15:00:00+00:00'),('노사관계 교섭','노사관계','2026-10-28T01:00:00+00:00'),('사망사고 발생','안전','2026-10-28T02:00:00+00:00'),('파업 예고','노사관계','2026-10-28T03:00:00+00:00'),('실적 발표','경영(투자·실적)','2026-10-28T04:00:00+00:00'),('포스코 소식','기타','2026-10-28T05:00:00+00:00'),('전날 기사','기타','2026-10-27T14:59:00+00:00')]
+  examples=[('현대제철 새 소식','기타','2026-10-27T15:00:00+00:00'),('노사관계 교섭','노사관계','2026-10-28T01:00:00+00:00'),('사망사고 발생','안전','2026-10-28T02:00:00+00:00'),('파업 예고','노사관계','2026-10-28T03:00:00+00:00'),('실적 발표','경영(투자·실적)','2026-10-28T04:00:00+00:00'),('포스코 소식','기타','2026-10-28T05:00:00+00:00'),('현대제철 전날 기사','기타','2026-10-27T14:59:00+00:00')]
   priorities=[news.headline_rank({'title':title,'description':'','category':category,'important':0,'published':date,'id':str(i)})[0] for i,(title,category,date) in enumerate(examples[:6])]
   self.assertEqual(priorities,[10,40,50,40,30,10])
   with app.db() as c:
@@ -105,6 +105,6 @@ class HeadlineTests(unittest.TestCase):
   headlines=self.v.get('/api/news').json['headlines']
   self.assertEqual([x['title'] for x in headlines],[examples[i][0] for i in (0,2,3,1)])
   with app.db() as c:c.execute("UPDATE news_articles SET excluded=1 WHERE id!='6'")
-  self.assertEqual([x['title'] for x in self.v.get('/api/news').json['headlines']],['전날 기사'])
+  self.assertEqual([x['title'] for x in self.v.get('/api/news').json['headlines']],['현대제철 전날 기사'])
   with app.db() as c:c.execute("UPDATE news_articles SET published='2026-10-26T14:59:00+00:00' WHERE id='6'")
   self.assertEqual(self.v.get('/api/news').json['headlines'],[])

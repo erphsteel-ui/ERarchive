@@ -1,7 +1,7 @@
 'use strict';
 let scheduleData=null, scheduleReview=false, scheduleActive=false, scheduleEditing=null, scheduleRowsDraft=[], scheduleRowsPrevious=[];
 let scheduleMonth=new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0');
-let scheduleZoom=false,scheduleAnchor='',scheduleLarge=false;
+let scheduleZoom=false,scheduleAnchor='';
 let scheduleRequest=0,scheduleSources=[],scheduleSourceSelected='',scheduleSourceLimit=30,scheduleSourceMode=true,sourcePreviewTicket=0;
 function syncReaderTabs(schedule){for(const [id,on] of [['readerScheduleTab',schedule],['readerArchiveTab',!schedule]]){const button=$('#'+id);button.classList.toggle('active',on);button.setAttribute('aria-pressed',String(on))}}
 $('#readerScheduleTab').onclick=()=>showSchedule(false);
@@ -23,15 +23,13 @@ async function showSchedule(review=false){
 }
 
 function renderSchedule(){
- $('#schedulePanel').classList.toggle('schedule-large',scheduleLarge);
  const admin=user.role==='admin',pending=scheduleData.pending||[];
- $('#schedulePanel').innerHTML=`<div class="schedule-heading"><div><span class="eyebrow">노사 주요 일정</span><h1>${scheduleReview?'일정 확인 · 검토':esc(scheduleMonth.replace('-','년 '))+'월 주요 일정'}</h1></div><div class="actions"><button id="scheduleRefresh">새로고침</button>${!scheduleReview?'<button id="schedulePrint">A3 가로 인쇄</button>':''}${admin?'<button id="scheduleRows">조직·사업장 편집</button><button id="scheduleAdd" class="primary">＋ 일정 추가</button>':''}</div></div><div class="schedule-controls"><button id="schedulePrev" aria-label="이전 달">←</button><input id="scheduleMonth" type="month" aria-label="일정 월" value="${esc(scheduleMonth)}"><button id="scheduleNext" aria-label="다음 달">→</button><button id="scheduleToday">이번 달</button>${!scheduleReview?`<button type="button" id="scheduleLarge" aria-pressed="${scheduleLarge}">🔍 큰 글씨 보기</button>`:''}${!scheduleReview?`<div class="schedule-view-toggle" role="group" aria-label="일정 보기 범위"><button id="scheduleFull" aria-pressed="${!scheduleZoom}">전체(월간)</button><button id="scheduleTwoWeeks" aria-pressed="${scheduleZoom}">2주 확대 보기</button></div>${scheduleZoom?`<label class="schedule-anchor-label">기준일 <input id="scheduleAnchor" type="date" min="${esc(scheduleMonth)}-01" max="${esc(scheduleMonth)}-${String(new Date(...scheduleMonth.split('-').map(Number),0).getDate()).padStart(2,'0')}" value="${esc(scheduleAnchorValue())}"></label>`:''}`:''}${admin?`<button id="scheduleView">${scheduleReview?'월간 일정표 보기':`검토할 자료 ${scheduleSources.filter(s=>!s.done||s.pending).length}건`}</button>`:''}</div><div id="scheduleMain"></div>`;
+ $('#schedulePanel').innerHTML=`<div class="schedule-heading"><div><span class="eyebrow">노사 주요 일정</span><h1>${scheduleReview?'일정 확인 · 검토':esc(scheduleMonth.replace('-','년 '))+'월 주요 일정'}</h1></div><div class="actions"><button id="scheduleRefresh">새로고침</button>${!scheduleReview?'<button id="schedulePrint">A3 가로 인쇄</button>':''}${admin?'<button id="scheduleRows">조직·사업장 편집</button><button id="scheduleAdd" class="primary">＋ 일정 추가</button>':''}</div></div><div class="schedule-controls"><button id="schedulePrev" aria-label="이전 달">←</button><input id="scheduleMonth" type="month" aria-label="일정 월" value="${esc(scheduleMonth)}"><button id="scheduleNext" aria-label="다음 달">→</button><button id="scheduleToday">이번 달</button>${!scheduleReview?`<div class="schedule-view-toggle" role="group" aria-label="일정 보기 범위"><button id="scheduleFull" aria-pressed="${!scheduleZoom}">전체(월간)</button><button id="scheduleTwoWeeks" aria-pressed="${scheduleZoom}">2주 확대 보기</button></div>${scheduleZoom?`<label class="schedule-anchor-label">기준일 <input id="scheduleAnchor" type="date" min="${esc(scheduleMonth)}-01" max="${esc(scheduleMonth)}-${String(new Date(...scheduleMonth.split('-').map(Number),0).getDate()).padStart(2,'0')}" value="${esc(scheduleAnchorValue())}"></label>`:''}`:''}${admin?`<button id="scheduleView">${scheduleReview?'월간 일정표 보기':`검토할 자료 ${scheduleSources.filter(s=>!s.done||s.pending).length}건`}</button>`:''}</div><div id="scheduleMain"></div>`;
  $('#schedulePrint')?.addEventListener('click',()=>{prepareSchedulePrint();window.print()});
  $('#scheduleRefresh').onclick=()=>showSchedule(scheduleReview);$('#scheduleView')?.addEventListener('click',()=>showSchedule(!scheduleReview));
  $('#scheduleMonth').onchange=e=>{if(e.target.value){scheduleMonth=e.target.value;showSchedule(scheduleReview)}};
  function shift(delta){const [y,m]=scheduleMonth.split('-').map(Number),d=new Date(y,m-1+delta,1);scheduleMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');showSchedule(scheduleReview)}
  $('#schedulePrev').onclick=()=>shift(-1);$('#scheduleNext').onclick=()=>shift(1);$('#scheduleToday').onclick=()=>{scheduleAnchor=scheduleTodayISO();const d=new Date();scheduleMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');showSchedule(scheduleReview)};
- $('#scheduleLarge')?.addEventListener('click',()=>{scheduleLarge=!scheduleLarge;renderSchedule()});
  $('#scheduleFull')?.addEventListener('click',()=>{scheduleZoom=false;renderSchedule()});$('#scheduleTwoWeeks')?.addEventListener('click',()=>{scheduleZoom=true;renderSchedule()});$('#scheduleAnchor')?.addEventListener('change',e=>{if(e.target.value){scheduleAnchor=e.target.value;renderSchedule()}});
  $('#scheduleAdd')?.addEventListener('click',()=>openScheduleEvent());$('#scheduleRows')?.addEventListener('click',openScheduleRows);
  if(scheduleReview&&admin)renderScheduleReview();else renderScheduleGrid();
@@ -191,11 +189,10 @@ async function renderSourceReview(source){
 }
 
 function fitReaderSchedule(){
- if(user?.role==='admin'||!scheduleActive)return;
+ if(!scheduleActive)return;
  const scroll=$('#scheduleMain .schedule-scroll');if(!scroll)return;
- if(window.innerWidth<900){scroll.style.removeProperty('--reader-grid-height');return}
- const available=Math.max(300,window.innerHeight-scroll.getBoundingClientRect().top-30);
- scroll.style.setProperty('--reader-grid-height',available+'px');scroll.style.setProperty('--calendar-row-height',Math.max(64,(available-34)/8)+'px');
+ const available=Math.max(200,window.innerHeight-scroll.getBoundingClientRect().top-10);
+ scroll.style.setProperty('--reader-grid-height',available+'px');scroll.style.setProperty('--calendar-row-height',Math.max(18,(available-34)/8)+'px');
 }
 let readerResizeFrame=0;
 window.addEventListener('resize',()=>{cancelAnimationFrame(readerResizeFrame);readerResizeFrame=requestAnimationFrame(fitReaderSchedule)});

@@ -22,7 +22,7 @@ class FilterAPITests(unittest.TestCase):
   self.config();now=news.utc_now();items=[]
   for i,days in enumerate([13,15]):
    n=self.sample();n.update(originallink='https://example.com/'+str(i),pubDate=format_datetime(now-dt.timedelta(days=days)));items.append(n)
-  n=self.sample();n.update(title=EXCLUDE[0],originallink='https://example.com/noise');items.append(n)
+  n=self.sample();n.update(title='[오늘의 주요일정] 현대제철',originallink='https://example.com/noise');items.append(n)
   with patch('news.fetch_news',return_value=items):r=self.c.post('/api/news/fetch',headers=self.h,json={})
   self.assertEqual(r.status_code,200);self.assertEqual(r.json['outdated'],1)
   self.assertEqual(self.v.get('/api/news').json['total'],1)

@@ -1,11 +1,18 @@
 """Conservative ER relevance rules, calibrated with user-labelled headlines."""
 import re,unicodedata
-VERSION='2026-10-29.2'
+VERSION='2026-10-29.3'
 CORE=re.compile(r'현대\s*제철|포스코|POSCO',re.I)
 DROP=re.compile(r'레드\s*엔젤스|여자\s*축구|양궁단|스틸러스|\[\s*특징주\s*\]|목표가\s*[↑↓]|부고|인사')
 PROMOTION=re.compile(r'견학|장학금|성료|봉사\s*활동|기부|캠페인|모집|개선\s*활동')
 OTHER_COMPANY=re.compile(r'현대\s*모비스|포스코\s*퓨처엠|현대\s*자동차|현대차|기아|현대\s*위아|현대\s*트랜시스|현대\s*로템|동국\s*제강|세아\s*제강')
 def should_drop(title):return bool(DROP.search(unicodedata.normalize('NFKC',title or '')))
+POSCO_ISSUES=re.compile(r'파업|노조|노동조합|교섭|임단협|결의대회|쟁의|고로|가동\s*중단|폐쇄|감산|구조조정|사망|폭발|화재|중대재해|철강\s*산단')
+DIRECT=re.compile(r'현대\s*제철|포항\s*철강\s*산단')
+def strict_drop(title,description='',category_name=None):
+    title=unicodedata.normalize('NFKC',title or '')
+    text=title+' '+unicodedata.normalize('NFKC',description or '')
+    if re.search(r'포스코|POSCO',text,re.I) and not re.search(r'현대\s*제철',text) and not POSCO_ISSUES.search(title):return True
+    return category_name=='기타' and not DIRECT.search(text)
 def demoted(title,description=''):
     title=unicodedata.normalize('NFKC',title or '')
     description=unicodedata.normalize('NFKC',description or '')
@@ -15,6 +22,7 @@ def classify(title,description=''):
     t=unicodedata.normalize('NFKC',title or '')
     d=unicodedata.normalize('NFKC',description or '')
     if should_drop(t):return 'exclude','스포츠·특징주·부고·인사 제외'
+    if strict_drop(t,d):return 'exclude','포스코 핵심 현안 이외 기사 제외'
     # Roundups stay excluded even when the excerpt mentions the company.
     if re.search(r'오늘의\s*주요\s*일정|오늘의\s*경기|손바닥\s*뉴스|위클립|\d+월\s*\d+주\s*주요\s*제조업\s*전망|\[산업소식\]|금주의.*의회',t):
         return 'exclude','종합 일정·뉴스 모음·정기 전망'
