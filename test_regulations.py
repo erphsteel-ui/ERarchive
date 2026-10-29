@@ -16,6 +16,11 @@ class RegulationTests(unittest.TestCase):
   self.rh={'X-CSRF':self.reader.post('/api/login',json={'name':'regreader','password':'reg-reader-password'}).json['csrf']}
  def save(self,category,body,token=''):
   return self.admin.post('/api/regulations/save',json={'category':category,'body':body,'token':token},headers=self.h)
+ def test_regulations_are_admin_only(self):
+  self.assertEqual(self.guest.get('/api/regulations/archive').status_code,401)
+  self.assertEqual(self.reader.get('/api/regulations/archive').status_code,403)
+  self.assertEqual(self.reader.get('/api/regulations/document?category=labor_act').status_code,403)
+  self.assertEqual(self.admin.get('/api/regulations/archive').status_code,200)
  def test_preservation_and_parser_boundaries(self):
   raw='머리말\n\n제1장 총칙\n제2절 근로조건\n제1조(목적)\n① 본문은 제2조에 따른다.\n제2조 [근로시간]\n1. 근로시간\n가. 세부 내용\n제2조의2(휴가)\n② 휴가\n부칙\n시행 관련\n[별표 1]\n표 내용\n'
   parts=parse_document(raw)
@@ -43,16 +48,16 @@ class RegulationTests(unittest.TestCase):
   self.assertEqual(self.save('labor_act',body).status_code,200)
   self.assertEqual(self.save('union_act','제3조(근로시간)\n근로시간 언급').status_code,200)
   for term in ('제56조','56조','제 56 조'):
-   result=self.guest.get('/api/regulations/archive',query_string={'q':term}).json;self.assertEqual(result['items'][0]['number'],'56')
-  result=self.guest.get('/api/regulations/archive?q=근로시간').json
+   result=self.admin.get('/api/regulations/archive',query_string={'q':term}).json;self.assertEqual(result['items'][0]['number'],'56')
+  result=self.admin.get('/api/regulations/archive?q=근로시간').json
   self.assertEqual(result['items'][0]['category'],'union_act');self.assertEqual(result['counts']['labor_act'],1);self.assertEqual(result['counts']['union_act'],1)
-  filtered=self.guest.get('/api/regulations/archive?q=근로시간&category=labor_act').json
+  filtered=self.admin.get('/api/regulations/archive?q=근로시간&category=labor_act').json
   self.assertEqual(len(filtered['items']),1);self.assertEqual(filtered['total'],2)
   token=self.admin.get('/api/regulations/document?category=labor_act').json['document']['token']
   self.assertEqual(self.save('labor_act','제7조(새 조문)\n새 원문',token).status_code,200)
   self.assertEqual(self.save('labor_act','제8조(충돌)',token).status_code,409)
-  self.assertEqual(self.guest.get('/api/regulations/archive?q=연장근로').json['items'],[])
-  self.assertEqual(len(self.guest.get('/api/regulations/archive?category=labor_act').json['items']),1)
+  self.assertEqual(self.admin.get('/api/regulations/archive?q=연장근로').json['items'],[])
+  self.assertEqual(len(self.admin.get('/api/regulations/archive?category=labor_act').json['items']),1)
   self.assertEqual(self.admin.get('/api/regulations/document?category=labor_act').json['document']['body'],'제7조(새 조문)\n새 원문')
  def test_failed_update_rolls_back_and_html_is_data(self):
   body='제1조(목적)\n<script>alert(1)</script>'
@@ -62,7 +67,7 @@ class RegulationTests(unittest.TestCase):
   def fail(*args):original(*args);raise RuntimeError('test failure')
   with patch('regulations.store_document',side_effect=fail):
    with self.assertLogs(app.app.logger,level='ERROR'):self.assertEqual(self.save('agreement','제2조(교체)',token).status_code,500)
-  result=self.guest.get('/api/regulations/archive?category=agreement').json
+  result=self.admin.get('/api/regulations/archive?category=agreement').json
   self.assertIn('<script>alert(1)</script>',result['items'][0]['body']);self.assertEqual(result['items'][0]['number'],'1')
   self.assertEqual(self.admin.get('/api/regulations/document?category=agreement').json['document']['body'],body)
  def test_legacy_migration_is_safe_and_non_destructive(self):

@@ -8,7 +8,7 @@ assert.equal(context.newsPublisher('unknown.example'),'unknown.example');
 let html=vm.runInContext('renderNewsSections(false)',context);assert.equal((html.match(/<article /g)||[]).length,2);assert(!html.includes('<script>'));assert(html.includes('&lt;script&gt;'));assert(!html.includes('data-news-id'));assert(html.includes('＋ 관련 기사 1건 ▾'));
 context.newsItems=[items[0]];html=vm.runInContext('renderNewsSections(true)',context);assert(html.includes('data-news-id="x"'));assert(!html.includes('data-news-id="y"'));assert(html.includes('(묶음)'));
 const template=fs.readFileSync(__dirname+'/templates/index.html','utf8'),tabs=template.slice(template.indexOf('id="readerTabs"'),template.indexOf('<section id="memoPanel"'));
-assert(tabs.indexOf('readerScheduleTab')<tabs.indexOf('readerArchiveTab'));assert(tabs.indexOf('readerArchiveTab')<tabs.indexOf('readerMemoTab'));assert(tabs.indexOf('readerMemoTab')<tabs.indexOf('readerRegulationsTab'));assert(tabs.indexOf('readerRegulationsTab')<tabs.indexOf('readerNewsTab'));assert(tabs.indexOf('readerNewsTab')<tabs.indexOf('readerFinancialTab'));
+assert(tabs.indexOf('readerScheduleTab')<tabs.indexOf('readerArchiveTab'));assert(tabs.indexOf('readerArchiveTab')<tabs.indexOf('readerMemoTab'));assert(tabs.indexOf('readerMemoTab')<tabs.indexOf('readerRegulationsTab'));assert(tabs.indexOf('readerRegulationsTab')<tabs.indexOf('readerBargainingTab'));assert(tabs.indexOf('readerBargainingTab')<tabs.indexOf('readerLaborCouncilTab'));assert(tabs.indexOf('readerLaborCouncilTab')<tabs.indexOf('readerNewsTab'));assert(tabs.indexOf('readerNewsTab')<tabs.indexOf('readerFinancialTab'));
 assert(template.includes('<title>ER 아카이브</title>'));console.log('PASS: news rows, related links, escaped content, admin group controls and reader tab order');
 context.newsHeadlines=Array.from({length:4},(_,i)=>({...items[0],id:'headline'+i,title:i===0?'<script>headline</script>':'headline'+i,article_count:2,important:i===0}));
 html=vm.runInContext('renderNewsHeadlines()',context);assert.equal((html.match(/<article /g)||[]).length,4);assert(!html.includes('<script>'));assert(html.includes('&lt;script&gt;headline'));assert(html.includes('★ 중요'));
@@ -23,7 +23,7 @@ context.newsSteelPress={date:'2026-10-28',sources:[{name:'스틸데일리',items
 html=vm.runInContext('renderSteelPress(false)',context);assert(!html.includes('<script>'));assert(html.includes('05:00'));assert(!html.includes('id="steelPressFetch"'));assert(html.includes('구글에서 찾기'));
 console.log('PASS: steel press metadata escaping, Korean time and reader controls');
 
-for(const ids of [['readerScheduleTab','readerArchiveTab','readerMemoTab','readerRegulationsTab','readerNewsTab','readerFinancialTab'],['scheduleNav','newsNav','allNav','financialNav','memoNav']]){
+for(const ids of [['readerScheduleTab','readerArchiveTab','readerMemoTab','readerRegulationsTab','readerBargainingTab','readerLaborCouncilTab','readerNewsTab','readerFinancialTab'],['scheduleNav','newsNav','allNav','financialNav','memoNav']]){
  for(let i=1;i<ids.length;i++)assert(template.indexOf('id="'+ids[i-1]+'"')<template.indexOf('id="'+ids[i]+'"'));
 }
 context.newsSteelPress.sources.push({...context.newsSteelPress.sources[0],name:'페로타임즈'});

@@ -73,7 +73,7 @@ def install(a):
             a.log(c,'법령·규정 원문 저장',b['category'])
         return jsonify(ok=True,updated=updated)
     @a.app.get('/api/regulations/archive')
-    @a.protected()
+    @a.protected(True)
     def regulation_archive_current():
         q=request.args.get('q','').strip();category=request.args.get('category','')
         if len(q)>200 or (category and category not in CATEGORIES):abort(400)

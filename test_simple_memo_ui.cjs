@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const code=fs.readFileSync(__dirname+'/static/memos.js','utf8'),dialog={open:false,classList:{remove(){}},showModal(){this.open=true}},nodes={};
-const context=vm.createContext({memoDialog:()=>dialog,memoEditing:null,memoGroups:['포항지회','비지회','민주노총','국회/외부','제보·미분류'],closeMemoDialog(){},$:id=>nodes[id]||(nodes[id]={elements:{organization:{}}}),esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});
+const context=vm.createContext({memoDialog:()=>dialog,memoEditing:null,memoGroups:['포항지회','비지회','민주노총','국회/외부','제보·미분류'],closeMemoDialog(){},$:id=>nodes[id]||(nodes[id]={elements:{organization:{}},querySelectorAll(){return []}}),esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});
 vm.runInContext(code.slice(code.indexOf('function openMemoEditor(')),context);vm.runInContext('openMemoEditor({})',context);
 const names=[...dialog.innerHTML.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);assert.deepEqual(names,['original','title','organization']);assert(!dialog.innerHTML.includes('수신일'));assert(!dialog.innerHTML.includes('출처'));
 const template=fs.readFileSync(__dirname+'/templates/index.html','utf8');assert(template.includes('<span class="archive-brand">ER 아카이브</span></div>'));
@@ -11,3 +11,8 @@ assert(list.includes('memo-card-grid'));assert(list.includes('memo-card-body'));
 assert(list.includes('memoHighlight(memoExcerpt(m,memoFilters.q),memoFilters.q)'));assert(list.includes('전체 내용 보기'));
 const css=fs.readFileSync(__dirname+'/static/theme.css','utf8');assert(css.includes('.memo-card-body{white-space:pre-wrap;'));
 console.log('PASS: memo cards preserve line breaks and escape message content');
+const helpers=vm.createContext({});vm.runInContext(code.slice(code.indexOf('function memoGroup('),code.indexOf('function memoHighlight(')),helpers);
+helpers.items=[...Array.from({length:12},(_,i)=>({organizations:['조직'+i]})),{organizations:['현장팀']},{organizations:['현장팀','현장팀']},{organizations:[]}];
+const tags=vm.runInContext('memoTopTags(items)',helpers);assert.equal(tags.length,10);assert.equal(tags[0][0],'현장팀');assert.equal(tags[0][1],2);
+assert.deepEqual(Array.from(vm.runInContext("memoParseTags(' 포항, 당진，포항 ')",helpers)),['포항','당진']);
+console.log('PASS: top ten tags are ranked by distinct memo counts and free text is deduplicated');
