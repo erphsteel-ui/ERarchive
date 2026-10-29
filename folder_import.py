@@ -1,7 +1,7 @@
 """Local/shared folder polling; source files are never moved or deleted."""
 import io,json,hashlib,secrets,threading,time,re
 from pathlib import Path
-from PIL import Image,UnidentifiedImageError
+from PIL import Image,UnidentifiedImageError,PngImagePlugin
 from flask import jsonify,request,abort
 
 class FolderImporter:
@@ -10,6 +10,52 @@ class FolderImporter:
         self.info={'message':'수집 준비 중','last_scan':'','imported':0,'duplicates':0,'errors':[]}
     def config(self):
         with self.a.db() as c:return json.loads(c.execute("SELECT value FROM settings WHERE key='inbox'").fetchone()[0])
+    def import_pdf(self,raw,name,digest):
+        """Render a stable PDF into a single durable review batch; preserve its source file."""
+        try:import pymupdf
+        except ImportError:raise ValueError('PDF 처리 패키지 PyMuPDF가 없습니다. requirements-pdf.txt를 설치하세요.')
+        a=self.a
+        with a.db() as c:
+            if c.execute('SELECT 1 FROM file_imports WHERE hash=?',(digest,)).fetchone():return 0
+        try:
+            pdf=pymupdf.open(stream=raw,filetype='pdf')
+            try:
+                if pdf.needs_pass:raise ValueError('암호가 설정된 PDF는 지원하지 않습니다.')
+                if not 1<=pdf.page_count<=20:raise ValueError('PDF는 1~20쪽까지 지원합니다.')
+                prepared=[];total=0
+                for n in range(pdf.page_count):
+                    page=pdf.load_page(n);rect=page.rect;scale=1.5
+                    if rect.width<=0 or rect.height<=0 or rect.width*rect.height*scale*scale>40000000:raise ValueError('PDF 페이지 크기가 너무 큽니다.')
+                    rendered=page.get_pixmap(matrix=pymupdf.Matrix(scale,scale),alpha=False).tobytes('png')
+                    metadata=PngImagePlugin.PngInfo();metadata.add_text('ERArchivePDFPage',digest+':'+str(n))
+                    with Image.open(io.BytesIO(rendered)) as picture:
+                        output=io.BytesIO();picture.save(output,format='PNG',pnginfo=metadata);image=output.getvalue()
+                    total+=len(image)
+                    if len(image)>15*1024*1024 or total>60*1024*1024:raise ValueError('변환 이미지 용량이 제한을 초과했습니다.')
+                    prepared.append((image,hashlib.sha256(image).hexdigest(),f'{name} · {n+1}쪽'))
+            finally:pdf.close()
+        except ValueError:raise
+        except Exception as exc:raise ValueError('PDF를 읽거나 변환하지 못했습니다.') from exc
+        created=[];imported=0
+        try:
+            with a.db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                if c.execute('SELECT 1 FROM file_imports WHERE hash=?',(digest,)).fetchone():return 0
+                fresh=[];seen=set()
+                for raw_page,page_hash,page_name in prepared:
+                    if page_hash in seen or c.execute('SELECT 1 FROM file_imports WHERE hash=? UNION ALL SELECT 1 FROM pages WHERE hash=? UNION ALL SELECT 1 FROM batch_pages WHERE hash=?',(page_hash,page_hash,page_hash)).fetchone():continue
+                    seen.add(page_hash);fresh.append((raw_page,page_hash,page_name))
+                if fresh:
+                    bid=secrets.token_hex(12);c.execute('INSERT INTO batches(id,state,mode,created,actor) VALUES(?,?,?,?,?)',(bid,'queued','single',a.stamp(),'수집폴더 PDF'))
+                    for n,(raw_page,page_hash,page_name) in enumerate(fresh):
+                        pid=secrets.token_hex(12);dest=a.DATA/'images'/(pid+'.png');dest.write_bytes(raw_page);created.append(dest)
+                        c.execute('INSERT INTO batch_pages(id,batch,name,path,hash,position) VALUES(?,?,?,?,?,?)',(pid,bid,page_name,dest.name,page_hash,n));c.execute('INSERT INTO file_imports VALUES(?,?)',(page_hash,a.stamp()))
+                    c.execute('INSERT INTO audit(time,actor,action,doc) VALUES(?,?,?,?)',(a.stamp(),'수집폴더','PDF 자동 수집 '+str(len(fresh))+'쪽',bid));imported=len(fresh)
+                c.execute('INSERT INTO file_imports VALUES(?,?)',(digest,a.stamp()))
+        except BaseException:
+            for path in created:path.unlink(missing_ok=True)
+            raise
+        return imported
     def scan(self,now=None):
         with self.lock:self._scan(time.monotonic() if now is None else now)
     def _scan(self,now):
@@ -20,7 +66,7 @@ class FolderImporter:
             if not folder.is_dir():raise OSError('수집폴더에 연결할 수 없습니다. 경로와 접근 권한을 확인하세요.')
             entries=[]
             for p in folder.iterdir():
-                if p.is_file() and not p.is_symlink() and p.suffix.lower() in ('.jpg','.jpeg','.png','.webp'):
+                if p.is_file() and not p.is_symlink() and p.suffix.lower() in ('.jpg','.jpeg','.png','.webp','.pdf'):
                     st=p.stat();entries.append((p,st.st_size,st.st_mtime_ns))
             entries.sort(key=lambda x:[int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)',x[0].name)])
             signature=(str(folder),tuple((str(p),size,mtime) for p,size,mtime in entries))
@@ -28,7 +74,7 @@ class FolderImporter:
                 self.snapshot=signature;self.changed_at=now;self.info['message']='파일 복사 완료 대기 중 (15초)';return
             if now-self.changed_at<15:return
             if signature==self.handled:self.info['message']='새 이미지 대기 중';return
-            prepared=[];errors=[];duplicates=0;seen=set();prepared_size=0;deferred=False
+            prepared=[];errors=[];duplicates=0;seen=set();prepared_size=0;deferred=False;pdf_imported=0
             with a.db() as c:known={r[0] for r in c.execute('SELECT hash FROM file_imports')}
             for p,size,mtime in entries:
                 if size>15*1024*1024:errors.append(p.name+' · 15MB 초과');continue
@@ -39,6 +85,8 @@ class FolderImporter:
                         self.snapshot=None;self.info['message']='파일 변경 감지 · 복사 완료를 다시 기다립니다.';return
                     digest=hashlib.sha256(raw).hexdigest()
                     if digest in known or digest in seen:duplicates+=1;continue
+                    if p.suffix.lower()=='.pdf':
+                        pdf_imported+=self.import_pdf(raw,p.name,digest);seen.add(digest);continue
                     if len(prepared)>=20 or prepared_size+len(raw)>60*1024*1024:
                         deferred=True;break
                     im=Image.open(io.BytesIO(raw));fmt=im.format
@@ -56,7 +104,7 @@ class FolderImporter:
                 if chunk and (len(chunk)>=20 or bytes_count+len(entry[0])>60*1024*1024):chunks.append(chunk);chunk=[];bytes_count=0
                 chunk.append(entry);bytes_count+=len(entry[0])
             if chunk:chunks.append(chunk)
-            imported=0
+            imported=pdf_imported
             for chunk in chunks:
                 created=[]
                 try:

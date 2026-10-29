@@ -66,24 +66,29 @@ def install(a):
    state=statuses.get(source,{})
    sources.append(dict(id=source,name=name,items=[r for r in rows if r['source']==source],checked=state.get('checked',''),error=state.get('error',''),google_url='https://www.google.com/search?'+urllib.parse.urlencode({'q':query}),list_url='https://'+domain+'/news/articleList.html?view_type=sm'))
   return dict(date=today.isoformat(),running=guard.locked(),sources=sources)
+ def collect(acquired=False):
+  if not acquired and not guard.acquire(blocking=False):return {'ok':False,'error':'전문지 수집이 이미 진행 중입니다.'}
+  errors=[]
+  try:
+   now=utc_now()
+   for source in SOURCES:
+    error=''
+    try:
+     rows=collect_source(source,now)
+     with a.db() as c:
+      for item in rows:c.execute('INSERT OR REPLACE INTO steel_press_articles VALUES(?,?,?,?,?,?)',(item['id'],source,item['title'],item['url'],item['published'],a.stamp()))
+    except Exception:
+     error='공개 목록 수집 실패 · 원문 목록이나 구글 검색을 확인하세요.';errors.append(SOURCES[source][0]+': '+error)
+    with a.db() as c:c.execute('INSERT OR REPLACE INTO steel_press_status VALUES(?,?,?)',(source,a.stamp(),error))
+   with a.db() as c:c.execute('DELETE FROM steel_press_articles WHERE published<?',((now-dt.timedelta(days=30)).isoformat(),))
+   return {'ok':not errors,'error':' · '.join(errors)}
+  finally:guard.release()
  def start():
   if not guard.acquire(blocking=False):return False
-  def worker():
-   try:
-    now=utc_now()
-    for source in SOURCES:
-     error=''
-     try:
-      rows=collect_source(source,now)
-      with a.db() as c:
-       for item in rows:c.execute('INSERT OR REPLACE INTO steel_press_articles VALUES(?,?,?,?,?,?)',(item['id'],source,item['title'],item['url'],item['published'],a.stamp()))
-     except Exception:error='공개 목록 수집 실패 · 원문 목록이나 구글 검색을 확인하세요.'
-     with a.db() as c:c.execute('INSERT OR REPLACE INTO steel_press_status VALUES(?,?,?)',(source,a.stamp(),error))
-    with a.db() as c:c.execute('DELETE FROM steel_press_articles WHERE published<?',((now-dt.timedelta(days=30)).isoformat(),))
-   finally:guard.release()
-  try:threading.Thread(target=worker,daemon=True,name='steel-press').start()
+  try:threading.Thread(target=collect,args=(True,),daemon=True,name='steel-press').start()
   except Exception:guard.release();raise
   return True
+ a.collect_steel_press=collect
  @a.app.post('/api/news/steel-press/fetch')
  @a.protected(True)
  def steel_press_fetch():return jsonify(ok=True,started=start())

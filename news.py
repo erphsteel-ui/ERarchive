@@ -170,17 +170,15 @@ def install(a):
             finally:temp.unlink(missing_ok=True)
         finally:guard.release()
         return jsonify(ok=True)
-    @a.app.post('/api/news/fetch')
-    @a.protected(True)
-    def news_collect():
-        if not guard.acquire(blocking=False):return jsonify(error='이미 뉴스를 가져오는 중입니다.'),409
+    def collect_news():
+        if not guard.acquire(blocking=False):return {'error':'이미 뉴스를 가져오는 중입니다.'},409
         try:
             cfg=read_config()
-            if not cfg.get('client_id') or not cfg.get('secret'):return jsonify(error='뉴스 설정에서 인증키를 먼저 저장하세요.'),400
+            if not cfg.get('client_id') or not cfg.get('secret'):return {'error':'뉴스 설정에서 인증키를 먼저 저장하세요.'},400
             try:items=fetch_news(cfg)
             except urllib.error.HTTPError as exc:
-                return jsonify(error=f'뉴스 API 응답 {exc.code}. 인증키·API 종류·검색 권한·이용 한도를 확인하세요.'),502
-            except (OSError,ValueError,KeyError):return jsonify(error='뉴스 서버에 연결하지 못했거나 응답 형식이 다릅니다. 외부 접속·인증 설정을 확인하세요.'),502
+                return {'error':f'뉴스 API 응답 {exc.code}. 인증키·API 종류·검색 권한·이용 한도를 확인하세요.'},502
+            except (OSError,ValueError,KeyError):return {'error':'뉴스 서버에 연결하지 못했거나 응답 형식이 다릅니다. 외부 접속·인증 설정을 확인하세요.'},502
             added=0;skipped=0;outdated=0;filtered=0;now=utc_now();cutoff=now-dt.timedelta(days=14)
             with a.db() as c:
                 for item in items:
@@ -200,11 +198,17 @@ def install(a):
                     changed=c.execute('INSERT OR IGNORE INTO news_articles(id,url,title,description,publisher,published,category,collected,relevance,filter_reason) VALUES(?,?,?,?,?,?,?,?,?,?)',(hashlib.sha256(url.encode()).hexdigest(),url,title,description,urllib.parse.urlsplit(url).hostname,published,category(title,description),a.stamp(),relevance,reason)).rowcount
                     added+=changed
                     if relevance=='exclude':filtered+=changed
-                a.log(c,'뉴스 수집 '+str(added)+'건 추가')
+                c.execute('INSERT INTO audit(time,actor,action,doc) VALUES(?,?,?,?)',(a.stamp(),'뉴스 수집','뉴스 수집 '+str(added)+'건 추가',''))
             a.start_news_previews()
-            if hasattr(a,'start_steel_press'):a.start_steel_press()
-            return jsonify(ok=True,added=added,received=len(items),skipped=skipped,outdated=outdated,filtered=filtered)
+            return dict(ok=True,added=added,received=len(items),skipped=skipped,outdated=outdated,filtered=filtered),200
         finally:guard.release()
+    a.collect_news=collect_news
+    @a.app.post('/api/news/fetch')
+    @a.protected(True)
+    def news_collect():
+        result,status=collect_news()
+        if status==200 and hasattr(a,'start_steel_press'):a.start_steel_press()
+        return jsonify(result),status
     @a.app.get('/api/news')
     @a.protected()
     def news_listing():

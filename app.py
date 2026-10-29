@@ -500,10 +500,12 @@ import schedule_intake
 schedule_intake.install(sys.modules[__name__])
 import precision
 precision.install(sys.modules[__name__])
+import auto_sync
+start_auto_sync=auto_sync.install(sys.modules[__name__])
 
 def main():
     import argparse,getpass
-    p=argparse.ArgumentParser();p.add_argument('--user');p.add_argument('--role',choices=['admin','viewer'],default='viewer');p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8080);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--user');p.add_argument('--role',choices=['admin','viewer'],default='viewer');p.add_argument('--startup-sync',action='store_true');p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8080);a=p.parse_args()
     if a.user:
         pw=getpass.getpass('Password (12+ characters): ')
         if len(pw)<12: raise SystemExit('Password must be 12+ characters')
@@ -528,5 +530,6 @@ def main():
     start_batches()
     start_folder_import()
     start_schedule()
+    if a.startup_sync:start_auto_sync()
     print(f'Archive: http://{a.host}:{a.port}');server.run()
 if __name__=='__main__': main()

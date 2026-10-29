@@ -155,7 +155,7 @@ def install(a):
                     for k in set(stable)-current:stable.pop(k,None)
             info.update(message=f'일정 검사 완료 · 새 후보 {count}건',last_scan=a.stamp(),errors=errors[:50])
         finally:lock.release()
-    a.scan_schedules=scan;a.ingest_schedule=ingest;a.schedule_lock=lock
+    a.scan_schedules=scan;a.ingest_schedule=ingest;a.schedule_lock=lock;a.request_schedule_scan=wake.set
     def event(r):
         item=json.loads(r['data']);item.update(id=r['id'],source=r['source'],state=r['state'],version=r['version']);return item
     @a.app.get('/api/schedule')

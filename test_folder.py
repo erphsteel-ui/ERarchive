@@ -1,4 +1,5 @@
 import unittest,tempfile,json,shutil
+from unittest.mock import patch
 from pathlib import Path
 import test_app,app
 from folder_import import FolderImporter
@@ -51,4 +52,27 @@ class FolderTests(unittest.TestCase):
    for i in range(21):(folder/(str(i)+'.png')).write_bytes(self.img((i,0,0)).getvalue())
    m=FolderImporter(app);m.scan(0);m.scan(16);m.scan(21)
    rows=self.c.get('/api/batches').json;self.assertEqual(len(rows),2);self.assertEqual(sum(r['total'] for r in rows),21)
+ def test_pdf_pages_are_queued_once_and_source_preserved(self):
+  try:import pymupdf
+  except ImportError:self.skipTest('PDF renderer is optional')
+  with tempfile.TemporaryDirectory() as tmp:
+   folder=Path(tmp);self.config(folder);pdf=pymupdf.open()
+   for text in ('same page','same page'):pdf.new_page().insert_text((72,72),text)
+   path=folder/'source.pdf';path.write_bytes(pdf.tobytes());pdf.close()
+   m=FolderImporter(app);m.scan(0);m.scan(16)
+   rows=self.c.get('/api/batches').json;self.assertEqual(len(rows),1);self.assertEqual(rows[0]['total'],2)
+   with app.db() as c:self.assertEqual(c.execute('SELECT mode FROM batches').fetchone()[0],'single')
+   self.assertTrue(path.exists());m=FolderImporter(app);m.scan(20);m.scan(36)
+   self.assertEqual(len(self.c.get('/api/batches').json),1)
+ def test_pdf_ocr_creates_schedule_review_candidate(self):
+  try:import pymupdf
+  except ImportError:self.skipTest('PDF renderer is optional')
+  with tempfile.TemporaryDirectory() as tmp:
+   folder=Path(tmp);self.config(folder);pdf=pymupdf.open();pdf.new_page().insert_text((72,72),'schedule');(folder/'schedule.pdf').write_bytes(pdf.tobytes());pdf.close()
+   with app.db() as c:c.execute('DELETE FROM schedule_events');c.execute('DELETE FROM schedule_seen');c.execute('DELETE FROM schedule_sources')
+   m=FolderImporter(app);m.scan(0);m.scan(16)
+   result={'raw':'간담회 2026.10.26 10시','variants':[{'text':'간담회 2026.10.26 10시'}],'selected':0,'regions':{},'status':'완료'}
+   with patch.object(app,'recognize_body',return_value=result):self.assertTrue(app.process_batch())
+   app.scan_schedules()
+   with app.db() as c:self.assertGreater(c.execute("SELECT count(*) FROM schedule_events WHERE state='pending'").fetchone()[0],0)
 if __name__=='__main__':unittest.main()

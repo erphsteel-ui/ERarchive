@@ -30,7 +30,7 @@ context.newsSteelPress.sources.push({...context.newsSteelPress.sources[0],name:'
 vm.runInContext('renderNews()',context);html=nodes['#newsPanel'].innerHTML;
 assert(html.includes('news-reader-columns'));assert(html.indexOf('class="news-list"')<html.indexOf('news-press-sidebar'));
 assert(html.indexOf('스틸데일리')<html.indexOf('페로타임즈'));assert.equal((html.match(/<h2>철강 전문지<\/h2>/g)||[]).length,1);
-context.user={role:'admin'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('news-reader-columns'));assert(nodes['#newsPanel'].innerHTML.includes('id="steelPressFetch"'));assert(nodes['#newsPanel'].innerHTML.includes('id="newsSettings"'));
+context.user={role:'admin'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('news-reader-columns'));assert(nodes['#newsPanel'].innerHTML.includes('전체 뉴스 동기화'));assert(nodes['#newsPanel'].innerHTML.includes('id="newsSettings"'));
 console.log('PASS: reader left news/right stacked press, admin layout matches viewer, matching five-tab order');
 
 context.user={role:'viewer'};vm.runInContext('renderNews()',context);assert(nodes['#newsPanel'].innerHTML.includes('언론 기사'));assert(!nodes['#newsPanel'].innerHTML.includes('최근 14일 기사만 표시합니다.'));console.log('PASS: renamed major press section and removed explanatory paragraph');
