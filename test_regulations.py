@@ -50,6 +50,20 @@ class RegulationTests(unittest.TestCase):
   self.assertEqual({item['category'] for item in result['missing']},{'union_act','union_decree'})
   self.assertEqual(self.guest.get('/api/regulations/search?q=과거').json['items'],[])
   self.assertEqual(self.guest.get('/api/regulations/search?q=').status_code,400)
+ def test_archive_samples_search_and_real_version_precedence(self):
+  initial=self.guest.get('/api/regulations/archive').json
+  self.assertGreaterEqual(len(initial['items']),6)
+  self.assertTrue(all(item['sample'] for item in initial['items']))
+  self.assertIn('실제 원문 아님',initial['items'][0]['source'])
+  self.assertGreaterEqual(len(self.guest.get('/api/regulations/archive?q=휴가').json['items']),3)
+  result=self.admin.post('/api/regulations',json=self.payload(category='agreement',body='제3조 (근로시간)\n실제 테스트 자료'),headers=self.h)
+  self.assertEqual(result.status_code,200)
+  data=self.guest.get('/api/regulations/archive?q=근로시간').json
+  agreement=[item for item in data['items'] if item['category']=='agreement']
+  self.assertEqual(len(agreement),1);self.assertFalse(agreement[0]['sample'])
+  self.assertEqual(agreement[0]['article']['key'],'3')
+  self.assertTrue(any(item['sample'] and item['category']=='labor_act' for item in data['items']))
+  self.assertEqual(self.guest.get('/api/regulations/archive?q='+('a'*201)).status_code,400)
  def test_import_docx_and_hwp_requires_admin_and_does_not_save(self):
   xml='''<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>제1장 총칙</w:t></w:r></w:p><w:p><w:r><w:t>제1조 (근로시간)</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>하루 근로시간</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>'''
   buf=io.BytesIO()

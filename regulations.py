@@ -19,6 +19,16 @@ CHAPTER = re.compile(r'^\s*(제\s*[0-9０-９일이삼사오육칠팔구십백�
 ARTICLE = re.compile(r'^\s*(제\s*([0-9０-９]+)\s*조(?:\s*의\s*([0-9０-９]+))?)(.*)$')
 FILE_LIMIT=15*1024*1024
 
+# Illustrative search fixtures only. They are not law text or company agreements.
+SAMPLES={
+ 'labor_act': [('60','제60조 연차유급휴가','연차와 유급휴가 관련 검색 예시입니다. 실제 적용 기준은 등록된 공식 법령 원문을 확인하세요.'),('23','제23조 해고 등의 제한','해고와 징계 관련 검색 예시입니다. 실제 요건은 공식 법령 원문을 확인하세요.'),('50','제50조 근로시간','근로시간과 휴게 관련 검색 예시입니다. 실제 조문과 예외는 공식 원문을 확인하세요.')],
+ 'labor_decree': [('','근로기준법 시행령 예시','휴가 및 근로시간 관련 검색 예시입니다. 실제 시행령 원문을 등록해 확인하세요.')],
+ 'union_act': [('81','제81조 부당노동행위','노동조합 활동과 부당노동행위 관련 검색 예시입니다. 실제 내용은 공식 원문을 확인하세요.')],
+ 'union_decree': [('','노동조합법 시행령 예시','노동조합 및 쟁의행위 관련 검색 예시입니다. 실제 시행령 원문을 등록해 확인하세요.')],
+ 'work_rules': [('','사내 취업규칙 예시','연차, 휴가, 징계, 근로시간을 검색하기 위한 가상 예시입니다. 실제 회사 규정이 아닙니다.')],
+ 'agreement': [('','사내 단체협약 예시','교섭, 근로시간, 휴가, 타임오프를 검색하기 위한 가상 예시입니다. 실제 단체협약이 아닙니다.')],
+}
+
 def docx_text(raw):
     """Extract paragraphs in document order with a bounded, local-only XML parser."""
     try:
@@ -106,6 +116,27 @@ def install(a):
         order={key:i for i,key in enumerate(CATEGORIES)}
         matches.sort(key=lambda x:order[x['category']])
         return jsonify(items=matches,missing=[{'category':key,'name':value} for key,value in CATEGORIES.items() if key not in registered])
+    @a.app.get('/api/regulations/archive')
+    @a.protected()
+    def regulation_archive():
+        query=request.args.get('q','').strip()
+        if len(query)>200:abort(400)
+        with a.db() as c:
+            saved={row['category']:dict(row) for row in c.execute('''SELECT r.category,r.version,r.title,r.effective_date,r.source,r.created,r.body
+                FROM regulation_versions r WHERE r.version=(SELECT MAX(v.version) FROM regulation_versions v WHERE v.category=r.category)''')}
+        items=[];missing=[]
+        for category,name in CATEGORIES.items():
+            entry=saved.get(category)
+            if entry:
+                articles=parse_articles(entry.pop('body'));entry['sample']=False
+            else:
+                missing.append({'category':category,'name':name})
+                entry={'category':category,'title':name,'version':0,'effective_date':'','source':'검색 기능 예시 · 실제 원문 아님','created':'','sample':True}
+                articles=[{'key':key,'title':title,'text':text,'chapter':'샘플'} for key,title,text in SAMPLES.get(category,[])]
+            for article in articles:
+                if query and query.casefold() not in (article['chapter']+'\n'+article['title']+'\n'+article['text']).casefold():continue
+                items.append({**entry,'category_name':name,'article':article})
+        return jsonify(items=items,missing=missing)
     @a.app.get('/api/regulations/history')
     @a.protected()
     def regulation_history():

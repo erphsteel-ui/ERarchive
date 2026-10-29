@@ -70,6 +70,11 @@ function scheduleVisibleDates(all=false){
  if(!all&&scheduleZoom)return Array.from({length:14},(_,i)=>scheduleAddDays(scheduleAnchorValue(),i));
  return Array.from({length:days},(_,i)=>scheduleMonth+'-'+String(i+1).padStart(2,'0'));
 }
+function scheduleCardHTML(group,e,all=false){
+ const split=scheduleSplitTitle(group,e.title),range=calendarRangeLabel(e),time=e.time||'',result=e.result||'';
+ const meta=[split.actor?`<span class="schedule-actor">[${esc(split.actor)}]</span>`:'',range?`<small class="calendar-range">${esc(range)}</small>`:'',time?`<small class="schedule-time">${esc(time)}</small>`:'',result?`<small class="schedule-result-tag">${esc(result)}</small>`:''].filter(Boolean).join('');
+ return `<div class="schedule-event-wrap"><button class="schedule-event schedule-tone-${scheduleTone(e)} ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}"><b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(split.title)}</b>${meta?`<span class="schedule-event-meta">${meta}</span>`:''}</button>${!all&&user.role==='admin'?`<span class="schedule-event-actions"><button type="button" data-event-edit="${esc(e.id)}">수정</button><button type="button" data-event-cancel="${esc(e.id)}">취소</button></span>`:''}</div>`;
+}
 function compactCalendarHTML(all=false){
  const dates=scheduleVisibleDates(all),today=scheduleTodayISO(),firstDate=dates[0];let html='<thead><tr><th class="schedule-org">구분 / 조직·사업장</th>';
  for(const date of dates){const [y,m,day]=date.split('-').map(Number),w=new Date(y,m-1,day).getDay();html+=`<th data-calendar-date="${date}" class="${w===0||w===6?'weekend':''} ${date===today?'schedule-today':''}">${scheduleZoom&&!all&&day===1?m+'/':''}${day}${date===today?'<span class="schedule-today-badge">TODAY</span>':''}<small>${'일월화수목금토'[w]}</small></th>`}html+='</tr></thead><tbody>';
@@ -78,7 +83,7 @@ function compactCalendarHTML(all=false){
   html+=`<tr class="${hasEvents?'':'schedule-empty-row'}"><th class="schedule-org">${esc(group.label)}</th>`;
   for(const date of dates){
    const [y,m,day]=date.split('-').map(Number),events=calendarDayEvents(group,date,firstDate),w=new Date(y,m-1,day).getDay(),occupied=scheduleData.events.some(e=>ids.has(e.row)&&e.start<=date&&e.end>=date);
-   html+=`<td data-calendar-date="${date}" data-calendar-group="${esc(group.id)}" data-calendar-empty="${!occupied}" class="${w===0||w===6?'weekend':''} ${date===today?'schedule-today':''}"><div class="calendar-day">${(all?events:events.slice(0,2)).map(e=>`<div class="schedule-event-wrap"><button class="schedule-event schedule-tone-${scheduleTone(e)} ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}">${scheduleSplitTitle(group,e.title).actor?`<span class="schedule-actor">[${esc(scheduleSplitTitle(group,e.title).actor)}]</span>`:''}<b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(scheduleSplitTitle(group,e.title).title)}</b>${calendarRangeLabel(e)?`<small class="calendar-range">${esc(calendarRangeLabel(e))}</small>`:''}${e.result?`<small class="schedule-result-tag">${esc(e.result)}</small>`:''}</button>${!all&&user.role==='admin'?`<span class="schedule-event-actions"><button type="button" data-event-edit="${esc(e.id)}">수정</button><button type="button" data-event-cancel="${esc(e.id)}">취소</button></span>`:''}</div>`).join('')}${!all&&events.length>2?`<button class="calendar-more" data-day-group="${group.id}" data-day-date="${date}">+${events.length-2}건</button>`:''}${!all&&user.role==='admin'?`<button class="calendar-add" data-add-group="${group.id}" data-add-date="${date}" aria-label="${esc(group.label)} ${date} 일정 추가">＋</button>`:''}</div></td>`;
+   html+=`<td data-calendar-date="${date}" data-calendar-group="${esc(group.id)}" data-calendar-empty="${!occupied}" class="${w===0||w===6?'weekend':''} ${date===today?'schedule-today':''}"><div class="calendar-day">${(all?events:events.slice(0,2)).map(e=>scheduleCardHTML(group,e,all)).join('')}${!all&&events.length>2?`<button class="calendar-more" data-day-group="${group.id}" data-day-date="${date}">+${events.length-2}건</button>`:''}${!all&&user.role==='admin'?`<button class="calendar-add" data-add-group="${group.id}" data-add-date="${date}" aria-label="${esc(group.label)} ${date} 일정 추가">＋</button>`:''}</div></td>`;
   }html+='</tr>';
  }return html+'</tbody>';
 }
@@ -105,7 +110,7 @@ function openQuickSchedule(groupID,date){
  if(!d.open)d.showModal();if(form)form.elements.title.focus();
 }
 function openCalendarDay(groupID,date){
- const group=calendarGroups().find(g=>g.id===groupID),events=calendarDayEvents(group,date,scheduleMonth+'-'+String(scheduleVisibleDays()[0]).padStart(2,'0'));
+ const group=calendarGroups().find(g=>g.id===groupID),events=calendarDayEvents(group,date,scheduleVisibleDates()[0]);
  $('#calendarDayHeading').textContent=date+' · '+group.label;
  $('#calendarDayList').innerHTML=events.map(e=>`<button data-day-event="${esc(e.id)}"><b>${esc(calendarEventLabel(group,e))}</b><small>${esc(e.start)} ~ ${esc(e.end)} · ${esc(e.status)}</small></button>`).join('');
  $$('[data-day-event]').forEach(b=>b.onclick=()=>{ $('#calendarDayDialog').close();openScheduleEvent(scheduleData.events.find(e=>e.id===b.dataset.dayEvent))});
@@ -190,7 +195,7 @@ function prepareSchedulePrint(){
  const heading=document.createElement('h1');heading.textContent=(scheduleData.month||scheduleMonth).replace('-','년 ')+'월 노사 주요 일정';sheet.append(heading);
  const table=$('#schedulePanel .schedule-table').cloneNode(true);table.innerHTML=compactCalendarHTML(true);table.classList.remove('compact-calendar');
  table.querySelectorAll('.schedule-empty').forEach(el=>el.remove());
- table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;span.textContent=el.textContent;el.replaceWith(span)});
+ table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;span.textContent=[el.querySelector('b')?.textContent,...[...el.querySelectorAll('.schedule-event-meta > *')].map(item=>item.textContent)].filter(Boolean).join(' ');el.replaceWith(span)});
  sheet.append(table);
 }
 window.addEventListener('beforeprint',prepareSchedulePrint);

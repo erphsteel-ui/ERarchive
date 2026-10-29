@@ -125,3 +125,9 @@ body.viewerrole .schedule-event b{font-size:10px;line-height:1.35;display:-webki
 
 @page{size:A3 landscape;margin:10mm}
 @media print{html,body,body.schedule-print-ready>#schedulePrintSheet{background:#fff!important;color:#111!important}#schedulePrintSheet .schedule-table{border-color:#ccc!important}#schedulePrintSheet .schedule-table th,#schedulePrintSheet .schedule-table td{background:#fff!important;color:#111!important;border-color:#ccc!important}#schedulePrintSheet .schedule-table .weekend{background:#f3f4f6!important}#schedulePrintSheet .schedule-today-badge{display:none}#schedulePrintSheet .schedule-event{color:#111!important;border:1px solid #7ca591!important;background:#e8f4ec!important}#schedulePrintSheet .schedule-event.schedule-tone-labor{background:#fce8e6!important;border-color:#c97e78!important}#schedulePrintSheet .schedule-event.schedule-tone-meeting{background:#e5efff!important;border-color:#7c9fc8!important}#schedulePrintSheet .schedule-event.schedule-muted{background:#eee!important;border-color:#999!important}}
+
+@media print{
+ #schedulePrintSheet .schedule-table td,#schedulePrintSheet .schedule-table tbody th{height:auto;vertical-align:top}
+ #schedulePrintSheet .calendar-day,#schedulePrintSheet .schedule-event-wrap{position:static;height:auto;min-height:0;overflow:visible}
+ #schedulePrintSheet .schedule-event{height:auto;max-height:none;overflow:visible;word-break:normal;overflow-wrap:anywhere}
+}
