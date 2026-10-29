@@ -43,6 +43,16 @@ class NewsTests(unittest.TestCase):
    r=self.c.post('/api/news/fetch',headers=self.h,json={});self.assertEqual(r.status_code,502);self.assertNotIn('private-secret',r.get_data(as_text=True))
   self.assertEqual(news.canonical('javascript:alert(1)'),'')
 
+ def test_category_counts_respect_other_filters(self):
+  with app.db() as c:
+   for i,(category,title,important) in enumerate([('안전','현대제철 안전',1),('노사관계','현대제철 교섭',0),('기타','다른 뉴스',0)]):
+    c.execute('INSERT INTO news_articles(id,url,title,description,publisher,published,category,important,excluded,relevance,filter_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(i),'https://example.com/'+str(i),title,'내용','example.com','2026-10-28T01:00:00+00:00',category,important,0,'keep',''))
+  data=self.v.get('/api/news?category=안전&q=현대제철').json
+  self.assertEqual(data['total'],1);self.assertEqual(data['category_counts'][''],2)
+  self.assertEqual(data['category_counts']['안전'],1);self.assertEqual(data['category_counts']['노사관계'],1)
+  self.assertEqual(data['category_counts']['기타'],0)
+  self.assertEqual(self.v.get('/api/news?important=1').json['category_counts'][''],1)
+
 class MultiSearchTests(unittest.TestCase):
  def test_separate_terms_and_url_dedup(self):
   shared={'originallink':'https://example.com/a?utm_source=x'}

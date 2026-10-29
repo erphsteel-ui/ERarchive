@@ -1,6 +1,6 @@
 """Internal trend notes with original text, source and revision history."""
 import datetime as dt,json,secrets,urllib.parse
-from flask import request,jsonify,abort
+from flask import request,jsonify,abort,session
 CATEGORIES=['교섭·노사','집회·투쟁','선거·조직','정책·외부 반응','기타']
 VERIFY=['미확인','출처 확인','내용 확인']
 def install(a):
@@ -16,6 +16,7 @@ def install(a):
     @a.protected()
     def memos_list():
         admin=a.current_role()=='admin';where=[];params=[]
+        if not session.get('csrf'):session['csrf']=secrets.token_hex(24)
         if not (admin and request.args.get('archived')=='1'):where.append('archived=0')
         for field in ('category','verification'):
             value=request.args.get(field,'')
@@ -38,10 +39,13 @@ def install(a):
         sql=' WHERE '+' AND '.join(where) if where else ''
         with a.db() as c:
             total=c.execute('SELECT count(*) FROM trend_memos'+sql,params).fetchone()[0]
-            records=[dict(r) for r in c.execute('SELECT id,title,organizations,category,received,source,substr(summary,1,300) summary,substr(original,1,1200) excerpt,verification,important,archived,version,updated FROM trend_memos'+sql+' ORDER BY received DESC,created DESC,id LIMIT 50 OFFSET ?',params+[offset])]
+            all_items=request.args.get('all')=='1'
+            fields='id,title,organizations,category,received,source,substr(summary,1,300) summary,substr(original,1,1200) excerpt,verification,important,archived,version,created,updated'
+            if all_items:fields+=',original'
+            records=[dict(r) for r in c.execute('SELECT '+fields+' FROM trend_memos'+sql+' ORDER BY received DESC,created DESC,id'+('' if all_items else ' LIMIT 50 OFFSET ?'),params+([] if all_items else [offset]))]
             orgs=sorted({org for r in c.execute('SELECT organizations FROM trend_memos'+('' if admin else ' WHERE archived=0')) for org in json.loads(r[0])})
         for row in records:row['organizations']=json.loads(row['organizations'])
-        return jsonify(items=records,total=total,categories=CATEGORIES,verification_options=VERIFY,organizations=orgs)
+        return jsonify(items=records,total=total,categories=CATEGORIES,verification_options=VERIFY,organizations=orgs,csrf=session['csrf'])
     @a.app.get('/api/memos/<mid>')
     @a.protected()
     def memos_detail(mid):
@@ -56,10 +60,13 @@ def install(a):
             if admin:d['history']=[dict(r) for r in c.execute('SELECT version,data,changed FROM trend_memo_history WHERE memo=? ORDER BY version DESC LIMIT 20',(mid,))]
         return jsonify(d)
     @a.app.post('/api/memos/save')
-    @a.protected(True)
     def memos_save():
+        if not session.get('csrf') or not secrets.compare_digest(request.headers.get('X-CSRF',''),session['csrf']):abort(403)
         b=request.get_json(silent=True)
         if not isinstance(b,dict):abort(400)
+        if a.current_role()!='admin':
+            if set(b)-{'title','original','organizations'}:abort(403)
+            b={key:b.get(key,[] if key=='organizations' else '') for key in ('title','original','organizations')}
         if b.get('id') is not None and not isinstance(b['id'],str):abort(400)
         previous=None
         if b.get('id'):

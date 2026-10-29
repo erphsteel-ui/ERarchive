@@ -210,23 +210,26 @@ def install(a):
         cat=request.args.get('category','')
         if cat:
             if cat not in CATEGORIES:abort(400)
-            where.append('category=?');params.append(cat)
         q=request.args.get('q','')[:200]
         if q:where.append('(instr(title,?)>0 OR instr(description,?)>0)');params.extend([q,q])
         sql=' WHERE '+' AND '.join(where) if where else ''
         with a.db() as c:
             records=[dict(r) for r in c.execute('SELECT * FROM news_articles'+sql+' ORDER BY published DESC,id',params)]
         for record in records:record['has_image']=record['preview']=='ready' and (preview_folder/(record['id']+'.jpg')).is_file()
-        grouped=group_articles(records)
+        all_grouped=group_articles(records)
+        category_counts={c:sum(1 for group in all_grouped if group['category']==c) for c in CATEGORIES}
+        category_counts['']=len(all_grouped)
+        grouped=[group for group in all_grouped if not cat or group['category']==cat]
+        filtered_records=[record for record in records if not cat or record['category']==cat]
         # Headlines use a separate global pool, independent of every list filter.
         with a.db() as c:
             recent=[dict(r) for r in c.execute("SELECT * FROM news_articles WHERE published>=? AND published<=? AND excluded=0 AND (relevance='keep' OR important=1)",((now-dt.timedelta(days=3)).isoformat(),now.isoformat()))]
         for record in recent:record['has_image']=record['preview']=='ready' and (preview_folder/(record['id']+'.jpg')).is_file()
         featured=headline_groups(recent,now)
-        headline_fields=('id','title','url','publisher','published','category','issue_label','article_count','important','group_latest','has_image','image_id')
+        headline_fields=('id','title','url','publisher','published','category','description','issue_label','article_count','important','group_latest','has_image','image_id')
         headlines=[{k:n.get(k) for k in headline_fields} for n in featured]
         press=a.steel_press_listing() if hasattr(a,'steel_press_listing') else {}
-        return jsonify(headlines=headlines,steel_press=press,items=grouped[offset:offset+100],total=len(grouped),article_total=len(records),categories=CATEGORIES,days=14,view=view,preview_status=dict(preview_info))
+        return jsonify(headlines=headlines,steel_press=press,items=grouped[offset:offset+100],total=len(grouped),article_total=len(filtered_records),category_counts=category_counts,categories=CATEGORIES,days=14,view=view,preview_status=dict(preview_info))
     @a.app.post('/api/news/group-action')
     @a.protected(True)
     def news_group_action():

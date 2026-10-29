@@ -45,3 +45,22 @@ class MemoTests(unittest.TestCase):
   for key in ['source','summary','category','received','links','important']:self.assertEqual(saved[key],old[key])
   minimal.pop('version')
   self.assertEqual(self.c.post('/api/memos/save',headers=self.h,json=minimal).status_code,409)
+
+ def test_anonymous_submission_and_admin_approval(self):
+  guest=app.app.test_client()
+  payload={'title':'제보','original':'원문','organizations':[]}
+  self.assertEqual(guest.post('/api/memos/save',json=payload).status_code,403)
+  csrf=guest.get('/api/memos?all=1').json['csrf']
+  headers={'X-CSRF':csrf}
+  result=guest.post('/api/memos/save',headers=headers,json=payload)
+  self.assertEqual(result.status_code,200)
+  mid=result.json['id'];detail=guest.get('/api/memos/'+mid).json
+  self.assertEqual(detail['organizations'],[])
+  self.assertEqual(guest.post('/api/memos/save',headers=headers,json={**payload,'id':mid,'version':detail['version']}).status_code,403)
+  self.assertEqual(guest.post('/api/memos/archive',headers=headers,json={'id':mid,'version':detail['version'],'archived':True}).status_code,401)
+  result=self.c.post('/api/memos/save',headers=self.h,json={'id':mid,'version':detail['version'],'organizations':['포항지회']})
+  self.assertEqual(result.status_code,200)
+  updated=guest.get('/api/memos/'+mid).json
+  self.assertEqual(updated['organizations'],['포항지회']);self.assertEqual(updated['original'],'원문')
+  listed=guest.get('/api/memos?all=1').json['items'][0]
+  self.assertEqual(listed['original'],'원문');self.assertTrue(listed['created'])

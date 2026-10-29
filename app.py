@@ -303,7 +303,7 @@ def image_file(pid):
         r=c.execute('SELECT p.path,d.meta FROM pages p JOIN documents d ON d.id=p.doc WHERE p.id=?',(pid,)).fetchone()
         role=current_role()
     if not r or (json.loads(r['meta'])['state']!='published' and role!='admin'): abort(404)
-    return send_file(DATA/'images'/r['path'])
+    return send_file(DATA/'images'/r['path'],as_attachment=request.args.get('download')=='1')
 @app.get('/api/thumbnail/<pid>')
 @protected()
 def thumbnail_file(pid):
@@ -334,6 +334,21 @@ def thumbnail_file(pid):
     return send_file(target,mimetype='image/jpeg')
 
 FIELDS=['title','date','issue','kind','note','state','category']
+@app.post('/api/documents/<did>/title')
+@protected(True)
+def edit_document_title(did):
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict) or not isinstance(b.get('title'),str) or not b['title'].strip() or len(b['title'])>5000 or type(b.get('version')) is not int:abort(400)
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        row=c.execute('SELECT meta,version FROM documents WHERE id=?',(did,)).fetchone()
+        if not row:abort(404)
+        if row['version']!=b['version']:abort(409)
+        meta=json.loads(row['meta']);meta['title']=b['title'].strip()
+        c.execute('UPDATE documents SET meta=?,updated=?,version=version+1 WHERE id=?',(json.dumps(meta,ensure_ascii=False),stamp(),did))
+        log(c,'제목 수정',did)
+    return jsonify(ok=True)
+
 @app.post('/api/documents/<did>')
 @protected(True)
 def edit(did):

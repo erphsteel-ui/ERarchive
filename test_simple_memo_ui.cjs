@@ -1,13 +1,13 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
-const code=fs.readFileSync(__dirname+'/static/memos.js','utf8'),dialog={open:false,showModal(){this.open=true}},nodes={};
-const context=vm.createContext({memoDialog:()=>dialog,memoEditing:null,closeMemoDialog(){},$:id=>nodes[id]||(nodes[id]={}),esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});
+const code=fs.readFileSync(__dirname+'/static/memos.js','utf8'),dialog={open:false,classList:{remove(){}},showModal(){this.open=true}},nodes={};
+const context=vm.createContext({memoDialog:()=>dialog,memoEditing:null,memoGroups:['포항지회','비지회','민주노총','국회/외부','제보·미분류'],closeMemoDialog(){},$:id=>nodes[id]||(nodes[id]={elements:{organization:{}}}),esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});
 vm.runInContext(code.slice(code.indexOf('function openMemoEditor(')),context);vm.runInContext('openMemoEditor({})',context);
-const names=[...dialog.innerHTML.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);assert.deepEqual(names,['organizations','title','original']);assert(!dialog.innerHTML.includes('수신일'));assert(!dialog.innerHTML.includes('출처'));
+const names=[...dialog.innerHTML.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);assert.deepEqual(names,['original','title','organization']);assert(!dialog.innerHTML.includes('수신일'));assert(!dialog.innerHTML.includes('출처'));
 const template=fs.readFileSync(__dirname+'/templates/index.html','utf8');assert(template.includes('<span class="archive-brand">ER 아카이브</span></div>'));
 const app=fs.readFileSync(__dirname+'/static/app.js','utf8');assert(app.includes("const categoryNames=['회사','집행부','제조직','계열사','그룹사','기타']"));
 console.log('PASS: three-field memo form, six publication categories and mint brand markup');
 const list=code.slice(code.indexOf('function renderMemos()'),code.indexOf('function memoDialog()'));
 assert(list.includes('memo-card-grid'));assert(list.includes('memo-card-body'));assert(!list.includes('<table'));
-assert(list.includes('esc(m.excerpt)'));assert(list.includes('전체 내용 보기'));
+assert(list.includes('memoHighlight(memoExcerpt(m,memoFilters.q),memoFilters.q)'));assert(list.includes('전체 내용 보기'));
 const css=fs.readFileSync(__dirname+'/static/theme.css','utf8');assert(css.includes('.memo-card-body{white-space:pre-wrap;'));
 console.log('PASS: memo cards preserve line breaks and escape message content');

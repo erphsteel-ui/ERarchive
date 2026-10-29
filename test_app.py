@@ -35,6 +35,15 @@ class Tests(unittest.TestCase):
   self.assertEqual(len(self.v.get('/api/documents').json),1)
   self.assertNotIn('note',self.v.get('/api/documents').json[0])
   self.assertEqual(self.v.get('/api/image/'+pid).status_code,200)
+ def test_inline_title_permission_and_version(self):
+  did=self.upload(['purple']);before=self.doc(did)
+  url='/api/documents/'+did+'/title';payload={'version':before['version'],'title':'새 제목'}
+  self.assertEqual(self.v.post(url,json=payload,headers=self.vh).status_code,403)
+  self.assertEqual(self.c.post(url,json=payload,headers=self.h).status_code,200)
+  after=self.doc(did);self.assertEqual(after['title'],'새 제목');self.assertEqual(after['version'],before['version']+1)
+  for key in ('state','kind','category','publishers','pages'):self.assertEqual(after.get(key),before.get(key))
+  self.assertEqual(self.c.post(url,json=payload,headers=self.h).status_code,409)
+  self.assertEqual(self.c.post(url,json={'version':after['version'],'title':'  '},headers=self.h).status_code,400)
  def test_anonymous_boundaries(self):
   guest=app.app.test_client()
   self.assertEqual(guest.get('/api/me').json['role'],'viewer')
