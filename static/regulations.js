@@ -14,7 +14,16 @@ function renderRegulations(){
  let timer;$('#regulationsSearch').oninput=e=>{regulationsSearch=e.target.value;clearTimeout(timer);timer=setTimeout(renderRegulationResults,120)};$('#regulationsEdit')?.addEventListener('click',openRegulationsEditor);
 }
 async function loadRegulations(){const ticket=++regulationsTicket;try{const data=await api('regulations/fulltexts');if(!regulationsActive||ticket!==regulationsTicket)return;regulationsDocs=data.documents;renderRegulationResults()}catch(e){if(regulationsActive&&ticket===regulationsTicket)$('#regulationsResults').innerHTML=`<p role="alert">조회하지 못했습니다: ${esc(e.message)}</p>`}}
-function regFind(docs,q){const results=[];if(!q)return results;for(const doc of docs){const lines=regLines(doc.body);let heading='원문';lines.forEach((line,i)=>{if(regHeading(line)==='article')heading=line.trim();const re=regRegex(q);let m;while((m=re.exec(line)))results.push({category:doc.category,line:i,heading,snippet:lines.slice(Math.max(0,i-2),Math.min(lines.length,i+3)).join('\n')})})}return results}
+// Only hide a cover TOC when the same numbered first article reappears.
+function regTocRange(lines){
+ const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));if(marker<0)return null;
+ const pattern=/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【]/;
+ let first=null;
+ for(let i=marker+1;i<lines.length;i++){const m=lines[i].match(pattern);if(!m||m[1]!=='1'||m[2])continue;if(first===null)first=i;else return {start:marker,end:i};}
+ return null;
+}
+function regFind(docs,q){const results=[];if(!q)return results;for(const doc of docs){const lines=regLines(doc.body);let heading='원문';lines.forEach((line,i)=>{if(regHeading(line)==='article')heading=line.trim();const re=regRegex(q);let m;while((m=re.exec(line))){let snippetLines=lines.slice(Math.max(0,i-2),Math.min(lines.length,i+3));if(i>0&&snippetLines[0]?.trim()===heading&&snippetLines[0]!==line)snippetLines.shift();results.push({category:doc.category,line:i,heading,snippet:snippetLines.join('\n')})}})}return results}
+let regCompare=false,regCompareCategory='',regFontSize=14;
 function renderRegulationResults(){
  const q=regulationsSearch.trim();regulationsMatches=regFind(regulationsDocs,q);const counts=Object.fromEntries(regulationsCategories.map(([k])=>[k,q?regulationsMatches.filter(x=>x.category===k).length:regulationsDocs.filter(x=>x.category===k).length]));
  $('#regulationsTags').innerHTML=[['','전체'],...regulationsCategories].map(([k,label])=>`<button type="button" data-regulation-filter="${k}" aria-pressed="${k===regulationsFilter}">${esc(label)} (${k?counts[k]:Object.values(counts).reduce((a,b)=>a+b,0)})</button>`).join('');
@@ -25,11 +34,34 @@ function renderRegulationResults(){
  panel.innerHTML=`<p class="regulations-result-count">검색 결과 ${visible.length}건</p><div class="regulations-split"><div class="regulations-result-list">${visible.map(({m,i})=>`<button class="regulations-hit" type="button" data-hit="${i}"><span class="regulation-badge">${esc(regLabel(m.category))}</span><strong>${esc(m.heading)}</strong><pre>${regHighlight(m.snippet,q)}</pre></button>`).join('')||'<p class="regulations-empty">검색 결과가 없습니다.</p>'}</div><div id="regulationsViewer"><p class="hint">검색 결과를 선택하면 원문 위치로 이동합니다.</p></div></div>`;
  panel.querySelectorAll('[data-hit]').forEach(button=>button.onclick=()=>{const hit=regulationsMatches[Number(button.dataset.hit)],doc=regulationsDocs.find(d=>d.category===hit.category);if(doc)renderRegViewer($('#regulationsViewer'),doc,q,hit.line)})
 }
+function regCopyText(lines,index){
+ let start=index;while(start>0&&regHeading(lines[start])!=='article'&&!regHeading(lines[start]))start--;
+ if(regHeading(lines[start])!=='article')return lines[index];
+ let end=start+1;while(end<lines.length&&!regHeading(lines[end]))end++;
+ return lines.slice(start,end).join('\n');
+}
 function renderRegViewer(container,doc,q,lineNumber){
- const lines=regLines(doc.body),headings=lines.map((line,i)=>({line,i,type:regHeading(line)})).filter(x=>x.type);
- container.innerHTML=`<div class="regulations-viewer"><aside class="regulations-toc" aria-label="원문 목차"><strong>${esc(regLabel(doc.category))}</strong>${headings.map(x=>`<button type="button" data-line="${x.i}" class="toc-${x.type}">${esc(x.line.trim())}</button>`).join('')||'<p class="hint">인식된 제목이 없습니다.</p>'}</aside><div class="regulations-document" tabindex="0" aria-label="규정 전문">${lines.map((line,i)=>`<div id="line-${i}" class="reg-line ${regHeading(line)}">${regHighlight(line,q)||'&#8203;'}</div>`).join('')}</div></div>`;
- function go(i){const target=container.querySelector('#line-'+i);if(!target)return;container.querySelectorAll('.reg-selected').forEach(x=>x.classList.remove('reg-selected'));target.classList.add('reg-selected');target.scrollIntoView({behavior:'smooth',block:'center'})}
- container.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>go(Number(b.dataset.line)));if(Number.isInteger(lineNumber))requestAnimationFrame(()=>go(lineNumber));
+ const alternatives=regulationsDocs.filter(d=>d.category!==doc.category);
+ if(!alternatives.some(d=>d.category===regCompareCategory))regCompareCategory=alternatives[0]?.category||'';
+ container.innerHTML=`<div class="regulations-workspace"><div class="regulations-toolbar-v2"><strong>${esc(regLabel(doc.category))}</strong><button type="button" data-font="-1" aria-label="글자 크기 줄이기">가−</button><button type="button" data-font="1" aria-label="글자 크기 키우기">가+</button><button type="button" data-compare aria-pressed="${regCompare}">${regCompare?'비교 닫기':'+ 규정 나란히 비교'}</button></div><div class="regulations-compare ${regCompare?'is-comparing':''}"><div class="reg-pane" data-pane="primary"></div>${regCompare?`<div class="reg-pane" data-pane="secondary"><label class="reg-compare-label">비교 규정<select data-compare-select><option value="">규정 선택</option>${alternatives.map(d=>`<option value="${esc(d.category)}" ${d.category===regCompareCategory?'selected':''}>${esc(regLabel(d.category))}</option>`).join('')}</select></label><div class="reg-secondary-content"></div></div>`:''}</div></div>`;
+ container.querySelectorAll('[data-font]').forEach(button=>button.onclick=()=>{regFontSize=Math.min(24,Math.max(11,regFontSize+Number(button.dataset.font)));container.querySelectorAll('.regulations-document').forEach(el=>el.style.fontSize=regFontSize+'px')});
+ container.querySelector('[data-compare]').onclick=()=>{const primary=container.querySelector('[data-pane=primary]'),selected=primary.querySelector('.reg-selected'),scroll=primary.querySelector('.regulations-document').scrollTop;const selectedLine=selected?Number(selected.dataset.sourceLine):undefined;regCompare=!regCompare;renderRegViewer(container,doc,q,selectedLine);if(selectedLine===undefined)container.querySelector('[data-pane=primary] .regulations-document').scrollTop=scroll};
+ mountRegPane(container.querySelector('[data-pane="primary"]'),doc,q,lineNumber,'primary');
+ if(regCompare){const select=container.querySelector('[data-compare-select]'),target=container.querySelector('.reg-secondary-content');const renderOther=()=>{regCompareCategory=select.value;const other=alternatives.find(d=>d.category===regCompareCategory);if(other)mountRegPane(target,other,'',undefined,'secondary');else target.innerHTML='<p class="hint">비교할 규정을 선택하세요.</p>'};select.onchange=renderOther;renderOther()}
+}
+function mountRegPane(container,doc,q,lineNumber,prefix){
+ const lines=regLines(doc.body),range=regTocRange(lines),showToc=Number.isInteger(lineNumber)&&range&&lineNumber>=range.start&&lineNumber<range.end;
+ const visible=(i)=>!range||showToc||i<range.start||i>=range.end;
+ const headings=lines.map((line,i)=>({line,i,type:regHeading(line)})).filter(x=>x.type&&visible(x.i));
+ container.innerHTML=`<div class="reg-pane-tools"><label>문서 내 검색<input type="search" data-local-search value="${esc(q)}" placeholder="이 문서에서 검색"></label><button type="button" data-local-next>다음 찾기</button><span data-local-status role="status"></span><button type="button" data-copy>현재 조항 복사</button></div><div class="regulations-viewer"><aside class="regulations-toc" aria-label="원문 목차"><strong>${esc(regLabel(doc.category))}</strong>${headings.map(x=>`<button type="button" data-line="${x.i}" class="toc-${x.type}">${esc(x.line.trim())}</button>`).join('')||'<p class="hint">인식된 제목이 없습니다.</p>'}</aside><div class="regulations-document" tabindex="0" aria-label="규정 전문">${lines.map((line,i)=>visible(i)?`<div id="${prefix}-line-${i}" data-source-line="${i}" class="reg-line ${regHeading(line)}">${regHighlight(line,q)||'&#8203;'}</div>`:'').join('')}</div></div>`;
+ const documentEl=container.querySelector('.regulations-document'),local=container.querySelector('[data-local-search]'),status=container.querySelector('[data-local-status]');let selected=Number.isInteger(lineNumber)?lineNumber:0,localIndex=-1;documentEl.style.fontSize=regFontSize+'px';
+ function go(i){const target=container.querySelector('[data-source-line="'+i+'"]');if(!target)return;selected=i;container.querySelectorAll('.reg-selected').forEach(x=>x.classList.remove('reg-selected'));target.classList.add('reg-selected');target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'})}
+ container.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>go(Number(b.dataset.line)));
+ documentEl.onclick=e=>{const el=e.target.closest('[data-source-line]');if(el)go(Number(el.dataset.sourceLine))};
+ local.oninput=()=>{localIndex=-1;const query=local.value.trim();documentEl.querySelectorAll('[data-source-line]').forEach(el=>{const i=Number(el.dataset.sourceLine);el.innerHTML=regHighlight(lines[i],query)||'&#8203;'});status.textContent=''};
+ container.querySelector('[data-local-next]').onclick=()=>{const query=local.value.trim();if(!query){status.textContent='검색어를 입력하세요.';return}const found=[];lines.forEach((line,i)=>{if(visible(i)&&regRegex(query).test(line))found.push(i)});if(!found.length){status.textContent='일치하는 내용이 없습니다.';return}localIndex=(localIndex+1)%found.length;status.textContent=(localIndex+1)+' / '+found.length;go(found[localIndex])};
+ container.querySelector('[data-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(regCopyText(lines,selected));status.textContent='복사했습니다.'}catch{status.textContent='복사할 수 없습니다. 본문을 선택해 복사해 주세요.'}};
+ if(Number.isInteger(lineNumber))requestAnimationFrame(()=>go(lineNumber));
 }
 async function openRegulationsEditor(){
  let dialog=$('#regulationsDialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='regulationsDialog';document.body.append(dialog)}
