@@ -492,6 +492,8 @@ import memos
 memos.install(sys.modules[__name__])
 import regulations
 regulations.install(sys.modules[__name__])
+import training_export
+training_export.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import
