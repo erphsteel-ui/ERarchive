@@ -100,69 +100,72 @@ def preprocess(raw):
     return '\n'.join(line for line in text.split('\n') if not re.match(r'^\s*(?:제정일|개정일)\s*:',line))
 
 def parse_hybrid(raw):
+    """Index meaningful body text line by line; retain original separately in the DB."""
     if not isinstance(raw,str) or not raw.strip():raise ValueError('원문을 입력하세요.')
-    text=preprocess(raw);lines=text.splitlines();pieces=[];current=None;sub=chapter=section='';addendum=False;buffer=[];signed=False
-    a_re=re.compile(r'^(제\s*(\d+)\s*조(?:\s*의\s*(\d+))?)\s*(?:([\(\[【])([^\)\]】]*?)[\)\]】]|(삭\s*제))(.*)$')
+    text=preprocess(raw);lines=text.splitlines();pieces=[];current=None
+    sub=chapter=section='';signed=False;buffer=[];toc=False
+    article=re.compile(r'^(제\s*(\d+)\s*조(?:\s*의\s*(\d+))?)\s*(?:([\(\[【])([^\)\]】]*?)[\)\]】]|(삭\s*제))(.*)$')
     def flush():
         nonlocal current
         if current:
-            current.pop('_heading',None);current['text']='\n'.join(current.pop('lines')).strip();current['order']=len(pieces);current['components']=component_markers(current['text']);pieces.append(current);current=None
-    def start(title,number='',kind='article',first=''):
+            content='\n'.join(current.pop('lines')).strip()
+            if not content and current.pop('deleted',False):content='삭제된 조항입니다.'
+            if content:
+                current.update(text=content,order=len(pieces),components=component_markers(content));pieces.append(current)
+            current=None
+    def start(title,number='',kind='article',first='',deleted=False):
         nonlocal current
-        flush();current=dict(kind=kind,number=number,title=title,text='',chapter=' > '.join(x for x in (sub,chapter) if x),section=section,review=False,lines=[first] if first else [])
-    if re.search(r'(?m)^\s*1\.\s*적용범위',text) and re.search(r'(?m)^\s*\d+\.\d+\.\d+\s*[가-힣]',text):
-        active=False;major=middle=''
-        for line in lines:
-            s=line.strip()
+        flush();current=dict(kind=kind,number=number,title=title,chapter=' > '.join(x for x in (sub,chapter) if x),section=section,review=False,lines=[first] if first else [],deleted=deleted)
+    standard=bool(re.search(r'(?m)^\s*1\.\s*적용범위',text) and re.search(r'(?m)^\s*\d+\.\d+\.\d+\s*[가-힣]',text))
+    active=not standard;major=middle=''
+    for index,line in enumerate(lines):
+        s=line.strip()
+        if standard:
             if not active:
                 if not re.match(r'^1\.\s*적용범위',s):continue
                 active=True
             m=re.match(r'^(\d+(?:\.\d+){0,2})(\.)?\s+([가-힣].*)$',s)
             if m:
                 level=m[1].count('.');label=m[1]+(m[2] or '')+' '+m[3]
-                if current and current.get('_heading') and not any(x.strip() for x in current['lines']):current=None
-                if level==0:
-                    sub='';chapter='';section='';start(label,m[1]);current['_heading']=True;major=label;middle='';continue
-                if level==1:
-                    sub='';chapter=major;section='';start(label,m[1]);current['_heading']=True;middle=label;continue
-                sub='';chapter=major;section=middle;start(label,m[1]);continue
+                flush()
+                if level==0:major=label;middle='';chapter=section=''
+                elif level==1:middle=label;chapter=major;section=''
+                else:chapter=major;section=middle
+                start(label,m[1]);continue
             if current:current['lines'].append(line)
-        if current and current.get('_heading') and not any(x.strip() for x in current['lines']):current=None
-        flush();return pieces
-    # Skip a table of contents through the first substantive article or preamble.
-    toc=False
-    for i,line in enumerate(lines):
-        s=line.strip()
-        if re.fullmatch(r'목\s*차',s):toc=True;continue
-        match=a_re.match(s)
+            continue
+        if re.fullmatch(r'목\s*차',s):flush();toc=True;continue
+        match=article.match(s)
+        if toc and re.fullmatch(r'전\s*문',s):
+            following=next((x.strip() for x in lines[index+1:] if x.strip()),'')
+            if following and not article.match(following) and not re.match(r'^제\s*\d+\s*[장절]',following) and not re.fullmatch(r'전\s*문',following):toc=False
         if toc:
-            if re.fullmatch(r'전\s*문',s):toc=False
-            elif match:
-                nextline=next((x.strip() for x in lines[i+1:] if x.strip()),'')
-                if nextline and not a_re.match(nextline) and not re.match(r'^제\s*\d+\s*[장절]',nextline):toc=False
-                else:continue
+            # Non-heading content marks the start of an actual candidate body.
+            # TOC entries will be discarded by flush when they have no content.
+            if s and not match and not re.fullmatch(r'전\s*문',s) and not re.match(r'^제\s*\d+\s*[장절]',s) and not re.match(r'^\d+\s*$',s):
+                toc=False
+            elif re.match(r'^제\s*1\s*장',s):
+                toc=False
             else:continue
         sm=re.match(r'^\d+\)\s*(.+세칙.*)$',s)
-        if sm:flush();sub=s;chapter=section='';addendum=False;signed=False;continue
+        if sm:flush();sub=s;chapter=section='';signed=False;continue
         cm=re.match(r'^제\s*\d+\s*(장|절)\.?\s*(.*)$',s)
         if cm:
             flush()
-            if cm[1]=='장':chapter=s;section='';addendum=False
+            if cm[1]=='장':chapter=s;section=''
             else:section=s
             continue
-        if re.fullmatch(r'부\s*칙\s*',s):flush();addendum=True;start('[부칙]',kind='appendix');continue
+        if re.match(r'^부\s*칙(?:\s|$|[<\[({])',s):flush();break
         if re.fullmatch(r'전\s*문',s):start('[전문] 전문',kind='preamble');continue
         if match:
             number=match[2]+('의'+match[3] if match[3] else '')
-            if addendum and current and current['title']=='[부칙]' and not any(x.strip() for x in current['lines']):current=None
-            title=match[1]+(' '+match[6] if match[6] else (match[4]+match[5]+{'(':')','[':']','【':'】'}[match[4]]))
-            if addendum:title='[부칙] '+title
-            start(title,number,first=match[7].strip());continue
+            title=match[1]+(' '+match[6] if match[6] else match[4]+match[5]+{'(':')','[':']','【':'】'}[match[4]])
+            start(title,number,first=match[7].strip(),deleted=bool(match[6]));continue
         if re.match(r'^(?:[·ㆍ]?\s*별첨|▣)',s):start('[별첨] '+re.sub(r'^(?:[·ㆍ]?\s*별첨|▣)\s*','',s),kind='appendix');continue
         if re.match(r'^\d{4}\.\s*\d+\.\s*\d+',s):flush();signed=True;buffer=[];continue
         if signed and re.match(r'^(대표이사|위원장)',s):continue
         if s.startswith('■'):
-            start('[별표] '+s[1:].strip(),kind='appendix');current['lines'].extend(buffer);buffer=[];signed=False;continue
+            start('[별표] '+s[1:].strip(),kind='appendix');current['lines'].extend(buffer);buffer=[];signed=True;continue
         if signed:buffer.append(line)
         elif current:current['lines'].append(line)
     flush();return pieces

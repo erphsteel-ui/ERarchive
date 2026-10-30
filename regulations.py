@@ -34,6 +34,33 @@ def install(a):
                     try:parts=parse_document(row['body'])
                     except ValueError:continue
                     store_document(c,new,row['body'],parts,row['created'] or '',secrets.token_hex(16))
+        # Rebuild the search index once per parser revision, preserving raw documents
+        # and independently registered manual cards. Roll back on any failure.
+        c.execute('CREATE TABLE IF NOT EXISTS regulation_index_version(category TEXT PRIMARY KEY,version INTEGER NOT NULL)')
+        for doc in c.execute('SELECT category,body,updated,token FROM regulation_documents').fetchall():
+            if doc['category'] not in CATEGORIES:continue
+            version=c.execute('SELECT version FROM regulation_index_version WHERE category=?',(doc['category'],)).fetchone()
+            if version and version[0]>=2:continue
+            c.execute('SAVEPOINT regulation_reindex')
+            try:
+                old=[dict(r) for r in c.execute('SELECT * FROM regulation_articles WHERE category=? ORDER BY position',(doc['category'],))]
+                manual=[r for r in old if r['kind']=='manual']
+                source=doc['body']
+                for item in reversed(manual):
+                    suffix=item['body']
+                    if not source.endswith(suffix):raise ValueError('수동 등록 항목의 원문 위치를 확인할 수 없습니다.')
+                    source=source[:-len(suffix)]
+                    if source.endswith('\n\n'):source=source[:-2]
+                parts=parse_hybrid(source) if source.strip() else []
+                if not parts and any(r['kind']!='manual' for r in old):raise ValueError('기존 조항이 없는 결과로 재색인하지 않습니다.')
+                for row in manual:
+                    parts.append(dict(kind='manual',number=row['number'],title=row['title'],text=row['body'],chapter=row['chapter'],section=row['section'],review=bool(row['needs_review']),order=len(parts),components=json.loads(row['structure'])))
+                store_document(c,doc['category'],doc['body'],parts,doc['updated'],doc['token'])
+                c.execute('INSERT INTO regulation_index_version VALUES(?,2) ON CONFLICT(category) DO UPDATE SET version=excluded.version',(doc['category'],))
+                c.execute('RELEASE regulation_reindex')
+            except Exception:
+                c.execute('ROLLBACK TO regulation_reindex');c.execute('RELEASE regulation_reindex')
+                a.app.logger.exception('규정 재색인 실패: %s',doc['category'])
         # Legacy versions are intentionally preserved for backup and ambiguous migration.
     def checked(body):
         if not isinstance(body,str) or len(body)>LIMIT or not body.strip():raise ValueError('원문을 입력하세요. 최대 200만 글자까지 가능합니다.')
@@ -113,6 +140,7 @@ def install(a):
                 c.execute('INSERT INTO regulation_articles VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(b['category'],position,'manual','','','',title.strip(),text,normalize(title),normalize(text),0,'[]'))
             else:
                 store_document(c,b['category'],b['body'],parts,updated,token)
+            c.execute('INSERT INTO regulation_index_version VALUES(?,2) ON CONFLICT(category) DO UPDATE SET version=excluded.version',(b['category'],))
             a.log(c,'법령·규정 원문 저장',b['category'])
         return jsonify(ok=True,updated=updated)
     @a.app.post('/api/regulations/delete')
@@ -125,6 +153,7 @@ def install(a):
             row=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if not row or row['token']!=b['token']:abort(409)
             c.execute('DELETE FROM regulation_articles WHERE category=?',(b['category'],))
+            c.execute('DELETE FROM regulation_index_version WHERE category=?',(b['category'],))
             c.execute('DELETE FROM regulation_documents WHERE category=?',(b['category'],))
             c.execute('INSERT OR IGNORE INTO regulation_deleted_categories(category) VALUES(?)',(b['category'],))
             a.log(c,'법령·규정 삭제',b['category'])

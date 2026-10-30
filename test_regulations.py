@@ -76,7 +76,7 @@ class RegulationTests(unittest.TestCase):
   with tempfile.TemporaryDirectory(prefix='er-migrate-') as folder:
    script='''import os,sqlite3,json\np=os.path.join(os.environ["ARCHIVE_DATA"],"archive.db");c=sqlite3.connect(p);c.execute("CREATE TABLE regulation_versions(category TEXT,version INTEGER,title TEXT,effective_date TEXT,source TEXT,body TEXT,created TEXT,actor TEXT,PRIMARY KEY(category,version))");c.executemany("INSERT INTO regulation_versions VALUES(?,?,?,?,?,?,?,?)",[("labor_act",1,"법","","","제1조(옛 내용)\\n원문","2025-01-01","a"),("labor_act",2,"법","","","제2조(현재 내용)\\n보존","2026-01-01","a"),("work_rules",1,"구분 불명","","","제1조(구분 불명)\\n원문","2026-01-01","a"),("labor_decree",1,"시행령","","","원문","2026-01-01","a")]);c.commit();c.close();import app\nwith app.db() as c:\n row=c.execute("SELECT body FROM regulation_documents WHERE category='labor_act'").fetchone();print(json.dumps({'body':row[0],'legacy':c.execute('SELECT count(*) FROM regulation_versions').fetchone()[0],'unknown':c.execute("SELECT count(*) FROM regulation_documents WHERE category IN ('work_general','work_technical')").fetchone()[0],'indexed':''.join(r[0] for r in c.execute("SELECT body FROM regulation_articles WHERE category='labor_act' ORDER BY position"))},ensure_ascii=False))'''
    env=dict(os.environ,ARCHIVE_DATA=folder);out=subprocess.check_output([sys.executable,'-c',script],cwd=os.path.dirname(__file__),env=env,text=True)
-   data=json.loads(out);self.assertEqual(data['body'],'제2조(현재 내용)\n보존');self.assertEqual(data['legacy'],4);self.assertEqual(data['unknown'],0);self.assertEqual(data['indexed'],data['body'])
+   data=json.loads(out);self.assertEqual(data['body'],'제2조(현재 내용)\n보존');self.assertEqual(data['legacy'],4);self.assertEqual(data['unknown'],0);self.assertEqual(data['indexed'],'보존')
  def test_file_extraction_and_permissions(self):
   for encoding in ('utf-8-sig','cp949'):
    result=self.admin.post('/api/regulations/extract',data={'file':(io.BytesIO('제50조(근로시간)\n주 40시간'.encode(encoding)),'rules.txt')},headers=self.h)
@@ -118,4 +118,26 @@ class RegulationTests(unittest.TestCase):
   with app.db() as c:self.assertTrue(c.execute("SELECT 1 FROM regulation_deleted_categories WHERE category='agreement'").fetchone())
   self.assertEqual(self.save('agreement','제2조(새 규정)\n내용').status_code,200)
   with app.db() as c:self.assertFalse(c.execute("SELECT 1 FROM regulation_deleted_categories WHERE category='agreement'").fetchone())
+ def test_reindex_preserves_raw_manual_and_is_idempotent(self):
+  with tempfile.TemporaryDirectory(prefix='er-reindex-') as folder:
+   env=dict(os.environ,ARCHIVE_DATA=folder)
+   setup=r"""import app,regulations,secrets
+raw='제1조(교섭권)\n첫 줄\n둘째 줄\n부칙 <제5310호>\n제4조(경과)\n제외'
+with app.db() as c:
+ regulations.store_document(c,'agreement',raw,regulations.parse_document(raw),'old','token')
+ c.execute('UPDATE regulation_documents SET body=body||? WHERE category=?',('\n\n수동 제목\n수동 본문','agreement'))
+ c.execute('INSERT INTO regulation_articles VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',('agreement',99,'manual','','','','수동 제목','수동 제목\n수동 본문','수동제목','수동본문',0,'[]'))
+ c.execute('DELETE FROM regulation_index_version')
+"""
+   read="""import app,json
+with app.db() as c:
+ print(json.dumps({'doc':dict(c.execute("SELECT * FROM regulation_documents WHERE category='agreement'").fetchone()),'rows':[dict(r) for r in c.execute("SELECT kind,title,body FROM regulation_articles WHERE category='agreement' ORDER BY position")],'version':c.execute("SELECT version FROM regulation_index_version WHERE category='agreement'").fetchone()[0]},ensure_ascii=False))
+"""
+   subprocess.check_call([sys.executable,'-c',setup],cwd=os.path.dirname(__file__),env=env)
+   first=json.loads(subprocess.check_output([sys.executable,'-c',read],cwd=os.path.dirname(__file__),env=env,text=True))
+   second=json.loads(subprocess.check_output([sys.executable,'-c',read],cwd=os.path.dirname(__file__),env=env,text=True))
+   self.assertEqual(first,second);self.assertEqual(first['version'],2)
+   self.assertIn('부칙 <제5310호>',first['doc']['body']);self.assertEqual(first['doc']['token'],'token')
+   self.assertEqual([r['kind'] for r in first['rows']],['article','manual'])
+   self.assertEqual(first['rows'][0]['body'],'첫 줄\n둘째 줄');self.assertEqual(first['rows'][1]['body'],'수동 제목\n수동 본문')
 if __name__=='__main__':unittest.main()
