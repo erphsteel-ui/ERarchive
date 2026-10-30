@@ -67,12 +67,27 @@ def parse_document(raw):
 
 def snippet(text,query,limit=480):
     if not query:return text[:limit]
-    target=normalize(query);chars=[];positions=[]
+    target=normalize(query)
+    if not target:return text[:limit]
+    # KMP tracks only the matching prefix and the recent source offsets.
+    # Avoid allocating a Python string and integer for every source character.
+    from collections import deque
+    prefix=[0]*len(target)
+    j=0
+    for i in range(1,len(target)):
+        while j and target[i]!=target[j]:j=prefix[j-1]
+        if target[i]==target[j]:j+=1
+        prefix[i]=j
+    positions=deque(maxlen=len(target));j=0;found=None
     for i,char in enumerate(text):
-        normalized=normalize(char)
-        for c in normalized:chars.append(c);positions.append(i)
-    index=''.join(chars).find(target)
-    start=max(0,positions[index]-100) if index>=0 else 0
+        for c in normalize(char):
+            positions.append(i)
+            while j and c!=target[j]:j=prefix[j-1]
+            if c==target[j]:j+=1
+            if j==len(target):
+                found=positions[0];break
+        if found is not None:break
+    start=max(0,found-100) if found is not None else 0
     return ('…' if start else '')+text[start:start+limit]+('…' if start+limit<len(text) else '')
 
 # Search indexing operates on normalized copies; regulation_documents retains the original.
