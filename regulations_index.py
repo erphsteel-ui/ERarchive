@@ -54,7 +54,9 @@ def parse_document(raw):
             flush_current()
             if pending and pending.strip() and not all(STRUCTURE.match(x) or not x.strip() for x in pending.splitlines()):flush_pending()
             number=str(int(article[1]))+('의'+str(int(article[2])) if article[2] else '')
-            current=dict(kind='article',text=pending+line,number=number,title=stripped,review=False,chapter=chapter,section=section);pending='';continue
+            header=re.match(r'^\s*제\s*[0-9０-９]+\s*조(?:\s*의\s*[0-9０-９]+)?\s*(?:\([^)]*\)|\[[^]]*\])',line)
+            title=header.group(0).strip() if header else stripped
+            current=dict(kind='article',text=pending+line,number=number,title=title,review=False,chapter=chapter,section=section);pending='';continue
         if current:current['text']+=line
         else:
             pending+=line
