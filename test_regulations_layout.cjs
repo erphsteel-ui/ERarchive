@@ -13,6 +13,13 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:ass
   await page.locator('[data-compare]').click();assert.equal(await page.locator('.regulations-document').count(),2);assert.equal(await page.locator('[data-compare-select]').inputValue(),'labor_act');
   await page.evaluate(()=>{regulationsSearch='8시간';renderRegulationResults()});await page.locator('[data-hit="0"]').click();sizes=await page.evaluate(()=>({list:document.querySelector('.regulations-result-list').getBoundingClientRect().width,viewer:document.querySelector('#regulationsViewer').getBoundingClientRect().width}));assert(sizes.list>=360&&sizes.list<=450);assert(sizes.viewer>sizes.list);
   assert(!((await page.locator('.regulations-hit pre').first().textContent()).trim().startsWith('제2조(근로시간)')));
+  await page.evaluate(()=>{regulationsDocs=[{category:'agreement',body:'제1장 총칙\n제1조(목적)\n제2조(시간)\n제1장 총칙\n제1조(목적)\n본문\n제2조(시간)\n'+ '앞'.repeat(200)+'키워드 추가 키워드'+'뒤'.repeat(100)+'\n제3조(휴일)\n키워드'}];regCompare=false;regulationsFilter='';regulationsSearch='키워드';renderRegulationResults()});
+  assert.equal(await page.locator('.regulations-hit').count(),2);
+  assert.match(await page.locator('.regulations-hit').first().textContent(),/2건/);
+  assert.match(await page.locator('.regulations-hit pre').first().textContent(),/^…앞+키워드/);
+  await page.locator('.regulations-hit').first().click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'7');
+  assert.equal(await page.locator('#primary-line-1').count(),0);
+  await page.locator('.regulations-toc [data-line="6"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'6');
   await page.close();
  }
  console.log('PASS: desktop admin/viewer width, TOC, scrolling, copying, search and comparison');

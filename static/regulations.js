@@ -14,15 +14,45 @@ function renderRegulations(){
  let timer;$('#regulationsSearch').oninput=e=>{regulationsSearch=e.target.value;clearTimeout(timer);timer=setTimeout(renderRegulationResults,120)};$('#regulationsEdit')?.addEventListener('click',openRegulationsEditor);
 }
 async function loadRegulations(){const ticket=++regulationsTicket;try{const data=await api('regulations/fulltexts');if(!regulationsActive||ticket!==regulationsTicket)return;regulationsDocs=data.documents;renderRegulationResults()}catch(e){if(regulationsActive&&ticket===regulationsTicket)$('#regulationsResults').innerHTML=`<p role="alert">조회하지 못했습니다: ${esc(e.message)}</p>`}}
-// Only hide a cover TOC when the same numbered first article reappears.
+// Identify a leading contents list only when an empty heading repeats with real body text.
 function regTocRange(lines){
- const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));if(marker<0)return null;
- const pattern=/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【]/;
- let first=null;
- for(let i=marker+1;i<lines.length;i++){const m=lines[i].match(pattern);if(!m||m[1]!=='1'||m[2])continue;if(first===null)first=i;else return {start:marker,end:i};}
+ const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));
+ const keyFor=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】]\s*$/);return m?m[1]+':'+(m[2]||''):null};
+ const first=new Map();
+ for(let i=Math.max(0,marker+1);i<lines.length;i++){
+  const key=keyFor(lines[i]);if(!key)continue;
+  let next=i+1;while(next<lines.length&&!lines[next].trim())next++;
+  const hasBody=next<lines.length&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)\b/.test(lines[next]);
+  if(!first.has(key)){if(!hasBody)first.set(key,i);continue}
+  if(hasBody){const firstIndex=first.get(key);let start=marker>=0?marker:firstIndex;
+   if(marker<0){while(start>0&&(!lines[start-1].trim()||regHeading(lines[start-1])))start--}
+   let end=i;while(end>firstIndex+1&&(!lines[end-1].trim()||regHeading(lines[end-1])==='chapter'))end--;
+   return {start,end};}
+ }
  return null;
 }
-function regFind(docs,q){const results=[];if(!q)return results;for(const doc of docs){const lines=regLines(doc.body);let heading='원문';lines.forEach((line,i)=>{if(regHeading(line)==='article')heading=line.trim();const re=regRegex(q);let m;while((m=re.exec(line))){let snippetLines=lines.slice(Math.max(0,i-2),Math.min(lines.length,i+3));if(i>0&&snippetLines[0]?.trim()===heading&&snippetLines[0]!==line)snippetLines.shift();results.push({category:doc.category,line:i,heading,snippet:snippetLines.join('\n')})}})}return results}
+function regSnippet(line,index,length){
+ const start=Math.max(0,index-60),end=Math.min(line.length,index+length+60);
+ return (start?'…':'')+line.slice(start,end)+(end<line.length?'…':'');
+}
+function regFind(docs,q){
+ const results=[];if(!q)return results;
+ for(const doc of docs){
+  const lines=regLines(doc.body),toc=regTocRange(lines);let group=null,heading='원문';
+  lines.forEach((line,i)=>{
+   if(toc&&i>=toc.start&&i<toc.end)return;
+   const kind=regHeading(line);
+   if(kind==='article'){heading=line.trim();group=null}
+   else if(kind==='chapter'){heading=line.trim();group=null}
+   const regex=regRegex(q);let match;
+   while((match=regex.exec(line))){
+    if(!group){group={category:doc.category,line:i,heading,snippet:regSnippet(line,match.index,match[0].length),count:0};results.push(group)}
+    group.count++;
+   }
+  });
+ }
+ return results;
+}
 let regCompare=false,regCompareCategory='',regFontSize=14;
 function renderRegulationResults(){
  const q=regulationsSearch.trim();regulationsMatches=regFind(regulationsDocs,q);const counts=Object.fromEntries(regulationsCategories.map(([k])=>[k,q?regulationsMatches.filter(x=>x.category===k).length:regulationsDocs.filter(x=>x.category===k).length]));
@@ -31,7 +61,7 @@ function renderRegulationResults(){
  const panel=$('#regulationsResults');
  if(!q){let doc=regulationsDocs.find(d=>d.category===regulationsFilter);if(!regulationsFilter){panel.innerHTML='<p class="hint">카테고리를 선택하면 규정 전문을 볼 수 있습니다.</p>';return}if(!doc){panel.innerHTML='<p class="regulations-empty">등록된 원문이 없습니다.</p>';return}panel.innerHTML='<div id="regulationsViewer"></div>';renderRegViewer($('#regulationsViewer'),doc,'');return}
  const visible=regulationsMatches.map((m,i)=>({m,i})).filter(x=>!regulationsFilter||x.m.category===regulationsFilter);
- panel.innerHTML=`<p class="regulations-result-count">검색 결과 ${visible.length}건</p><div class="regulations-split"><div class="regulations-result-list">${visible.map(({m,i})=>`<button class="regulations-hit" type="button" data-hit="${i}"><span class="regulation-badge">${esc(regLabel(m.category))}</span><strong>${esc(m.heading)}</strong><pre>${regHighlight(m.snippet,q)}</pre></button>`).join('')||'<p class="regulations-empty">검색 결과가 없습니다.</p>'}</div><div id="regulationsViewer"><p class="hint">검색 결과를 선택하면 원문 위치로 이동합니다.</p></div></div>`;
+ panel.innerHTML=`<p class="regulations-result-count">검색 결과 ${visible.length}건</p><div class="regulations-split"><div class="regulations-result-list">${visible.map(({m,i})=>`<button class="regulations-hit" type="button" data-hit="${i}"><span class="regulation-badge">${esc(regLabel(m.category))}</span><strong>${esc(m.heading)} <small class="reg-match-count">${m.count}건</small></strong><pre>${regHighlight(m.snippet,q)}</pre></button>`).join('')||'<p class="regulations-empty">검색 결과가 없습니다.</p>'}</div><div id="regulationsViewer"><p class="hint">검색 결과를 선택하면 원문 위치로 이동합니다.</p></div></div>`;
  panel.querySelectorAll('[data-hit]').forEach(button=>button.onclick=()=>{const hit=regulationsMatches[Number(button.dataset.hit)],doc=regulationsDocs.find(d=>d.category===hit.category);if(doc)renderRegViewer($('#regulationsViewer'),doc,q,hit.line)})
 }
 function regCopyText(lines,index){
