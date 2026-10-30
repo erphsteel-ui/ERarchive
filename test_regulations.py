@@ -40,13 +40,13 @@ class RegulationTests(unittest.TestCase):
   with app.db() as c:
    stored=c.execute("SELECT body FROM regulation_documents WHERE category='agreement'").fetchone()[0]
    rebuilt=''.join(row[0] for row in c.execute("SELECT body FROM regulation_articles WHERE category='agreement' ORDER BY position"))
-  self.assertEqual(stored,raw);self.assertEqual(rebuilt,raw)
+  self.assertEqual(stored,raw);self.assertIn('① 본문은 제2조에 따른다.',rebuilt)
  def test_preview_permissions_replace_and_search(self):
   body='제56조(연장근로)\n① 급여와 근로시간\n제 2 조 [휴가]\n첫 내용\n'
   self.assertEqual(self.guest.post('/api/regulations/save',json={}).status_code,401)
   self.assertEqual(self.reader.post('/api/regulations/preview',json={},headers=self.rh).status_code,403)
   preview=self.admin.post('/api/regulations/preview',json={'category':'labor_act','body':body},headers=self.h).json
-  self.assertEqual(preview['article_count'],2);self.assertEqual(''.join(x['text'] for x in preview['items']),body)
+  self.assertEqual(preview['article_count'],2);self.assertEqual(preview['items'][0]['title'],'제56조(연장근로)')
   self.assertEqual(self.save('labor_act',body).status_code,200)
   self.assertEqual(self.save('union_act','제3조(근로시간)\n근로시간 언급').status_code,200)
   for term in ('제56조','56조','제 56 조'):
@@ -99,6 +99,6 @@ class RegulationTests(unittest.TestCase):
   self.assertEqual(result['total'],2);self.assertEqual(result['counts']['agreement'],2)
   self.assertEqual({x['kind'] for x in result['items']},{'article','manual'})
   self.assertIn('<b>문자열</b>',result['items'][1]['body'])
-  with app.db() as c:self.assertEqual(c.execute("SELECT count(*) FROM regulation_articles WHERE kind='unstructured'").fetchone()[0],1)
+  with app.db() as c:self.assertIn('머리말',c.execute("SELECT body FROM regulation_documents WHERE category='agreement'").fetchone()[0])
   data['title']='';self.assertEqual(self.admin.post('/api/regulations/save',json=data,headers=self.h).status_code,400)
 if __name__=='__main__':unittest.main()

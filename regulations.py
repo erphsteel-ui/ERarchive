@@ -2,7 +2,7 @@
 import json,secrets,io,zipfile
 from xml.etree import ElementTree as ET
 from flask import abort, jsonify, request
-from regulations_index import parse_document,normalize,number_key,snippet
+from regulations_index import parse_document,parse_hybrid,normalize,number_key,snippet
 
 CATEGORIES={
  'labor_act':'근로기준법','union_act':'노동조합법','work_technical':'기술직 취업규칙',
@@ -36,7 +36,7 @@ def install(a):
         # Legacy versions are intentionally preserved for backup and ambiguous migration.
     def checked(body):
         if not isinstance(body,str) or len(body)>LIMIT or not body.strip():raise ValueError('원문을 입력하세요. 최대 200만 글자까지 가능합니다.')
-        return parse_document(body)
+        return parse_hybrid(body)
     @a.app.get('/api/regulations/document')
     @a.protected(True)
     def regulation_document():
@@ -83,7 +83,7 @@ def install(a):
         if not isinstance(b,dict) or b.get('category') not in CATEGORIES:abort(400)
         try:parts=checked(b.get('body'))
         except ValueError as exc:return jsonify(error=str(exc)),400
-        return jsonify(items=parts,article_count=sum(p['kind']=='article' for p in parts),review_count=sum(p['review'] for p in parts))
+        return jsonify(items=parts,article_count=sum(p['kind'] in ('article','appendix','preamble') for p in parts),review_count=sum(p['review'] for p in parts))
     @a.app.post('/api/regulations/save')
     @a.protected(True)
     def regulation_save_current():
@@ -123,7 +123,7 @@ def install(a):
             records=[dict(r) for r in c.execute('SELECT a.*,d.updated FROM regulation_articles a JOIN regulation_documents d ON d.category=a.category')]
         order={key:i for i,key in enumerate(CATEGORIES)}
         for item in records:
-            if item['category'] not in CATEGORIES or item['kind'] not in ('article','manual'):continue
+            if item['category'] not in CATEGORIES or item['kind'] not in ('article','manual','appendix','preamble'):continue
             if normalized:
                 number_match=bool(number and item['number']==number)
                 title_match=number_match or normalized in item['search_title']
