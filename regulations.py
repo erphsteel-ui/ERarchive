@@ -2,7 +2,7 @@
 import json,secrets,io,zipfile
 from xml.etree import ElementTree as ET
 from flask import abort, jsonify, request
-from regulations_index import parse_document,parse_hybrid,normalize,number_key,snippet
+
 
 CATEGORIES={
  'labor_act':'근로기준법','union_act':'노동조합법','work_technical':'기술직 취업규칙',
@@ -11,13 +11,6 @@ CATEGORIES={
 LEGACY_SAFE={'labor_act':'labor_act','union_act':'union_act','agreement':'agreement'}
 LIMIT=2000000
 
-def store_document(c,category,body,parts,updated,token):
-    c.execute('INSERT INTO regulation_documents(category,body,updated,token) VALUES(?,?,?,?) ON CONFLICT(category) DO UPDATE SET body=excluded.body,updated=excluded.updated,token=excluded.token',(category,body,updated,token))
-    c.execute('DELETE FROM regulation_articles WHERE category=?',(category,))
-    for part in parts:
-        c.execute('INSERT INTO regulation_articles(category,position,kind,chapter,section,number,title,body,search_title,search_body,needs_review,structure) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(
-            category,part['order'],part['kind'],part['chapter'],part['section'],part['number'],part['title'],part['text'],normalize(part['title']+' '+part['number']),normalize(part['text']+' '+part['chapter']+' '+part['section']),int(part['review']),json.dumps(part['components'],ensure_ascii=False)))
-
 def install(a):
     with a.db() as c:
         c.executescript('''CREATE TABLE IF NOT EXISTS regulation_documents(category TEXT PRIMARY KEY,body TEXT NOT NULL,updated TEXT NOT NULL,token TEXT NOT NULL);
@@ -25,46 +18,23 @@ def install(a):
         if 'structure' not in {row[1] for row in c.execute('PRAGMA table_info(regulation_articles)')}:
             c.execute("ALTER TABLE regulation_articles ADD COLUMN structure TEXT NOT NULL DEFAULT '[]'")
         c.execute('CREATE TABLE IF NOT EXISTS regulation_deleted_categories(category TEXT PRIMARY KEY)')
+        # Preserve original documents; older article indexes remain untouched.
         legacy=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='regulation_versions'").fetchone()
         if legacy:
             for old,new in LEGACY_SAFE.items():
                 if c.execute('SELECT 1 FROM regulation_documents WHERE category=?',(new,)).fetchone() or c.execute('SELECT 1 FROM regulation_deleted_categories WHERE category=?',(new,)).fetchone():continue
                 row=c.execute('SELECT body,created FROM regulation_versions WHERE category=? ORDER BY version DESC LIMIT 1',(old,)).fetchone()
                 if row and row['body'] and row['body'].strip():
-                    try:parts=parse_document(row['body'])
-                    except ValueError:continue
-                    store_document(c,new,row['body'],parts,row['created'] or '',secrets.token_hex(16))
-        # Rebuild the search index once per parser revision, preserving raw documents
-        # and independently registered manual cards. Roll back on any failure.
-        c.execute('CREATE TABLE IF NOT EXISTS regulation_index_version(category TEXT PRIMARY KEY,version INTEGER NOT NULL)')
-        for doc in c.execute('SELECT category,body,updated,token FROM regulation_documents').fetchall():
-            if doc['category'] not in CATEGORIES:continue
-            version=c.execute('SELECT version FROM regulation_index_version WHERE category=?',(doc['category'],)).fetchone()
-            if version and version[0]>=2:continue
-            c.execute('SAVEPOINT regulation_reindex')
-            try:
-                old=[dict(r) for r in c.execute('SELECT * FROM regulation_articles WHERE category=? ORDER BY position',(doc['category'],))]
-                manual=[r for r in old if r['kind']=='manual']
-                source=doc['body']
-                for item in reversed(manual):
-                    suffix=item['body']
-                    if not source.endswith(suffix):raise ValueError('수동 등록 항목의 원문 위치를 확인할 수 없습니다.')
-                    source=source[:-len(suffix)]
-                    if source.endswith('\n\n'):source=source[:-2]
-                parts=parse_hybrid(source) if source.strip() else []
-                if not parts and any(r['kind']!='manual' for r in old):raise ValueError('기존 조항이 없는 결과로 재색인하지 않습니다.')
-                for row in manual:
-                    parts.append(dict(kind='manual',number=row['number'],title=row['title'],text=row['body'],chapter=row['chapter'],section=row['section'],review=bool(row['needs_review']),order=len(parts),components=json.loads(row['structure'])))
-                store_document(c,doc['category'],doc['body'],parts,doc['updated'],doc['token'])
-                c.execute('INSERT INTO regulation_index_version VALUES(?,2) ON CONFLICT(category) DO UPDATE SET version=excluded.version',(doc['category'],))
-                c.execute('RELEASE regulation_reindex')
-            except Exception:
-                c.execute('ROLLBACK TO regulation_reindex');c.execute('RELEASE regulation_reindex')
-                a.app.logger.exception('규정 재색인 실패: %s',doc['category'])
-        # Legacy versions are intentionally preserved for backup and ambiguous migration.
+                    c.execute('INSERT INTO regulation_documents(category,body,updated,token) VALUES(?,?,?,?)',(new,row['body'],row['created'] or '',secrets.token_hex(16)))
     def checked(body):
         if not isinstance(body,str) or len(body)>LIMIT or not body.strip():raise ValueError('원문을 입력하세요. 최대 200만 글자까지 가능합니다.')
-        return parse_hybrid(body)
+
+    @a.app.get('/api/regulations/fulltexts')
+    @a.protected()
+    def regulation_fulltexts():
+        with a.db() as c:
+            docs=[dict(row) for row in c.execute('SELECT category,body,updated FROM regulation_documents') if row['category'] in CATEGORIES]
+        return jsonify(documents=docs)
     @a.app.get('/api/regulations/document')
     @a.protected(True)
     def regulation_document():
@@ -104,43 +74,20 @@ def install(a):
         except (ValueError,UnicodeError,zipfile.BadZipFile,KeyError,ET.ParseError,RuntimeError,NotImplementedError):
             return jsonify(error='텍스트를 추출할 수 없습니다. 파일 형식 또는 인코딩을 확인하고 텍스트 붙여넣기를 사용하세요.'),400
         return jsonify(text=text)
-    @a.app.post('/api/regulations/preview')
-    @a.protected(True)
-    def regulation_preview():
-        b=request.get_json(silent=True)
-        if not isinstance(b,dict) or b.get('category') not in CATEGORIES:abort(400)
-        try:parts=checked(b.get('body'))
-        except ValueError as exc:return jsonify(error=str(exc)),400
-        return jsonify(items=parts,article_count=sum(p['kind'] in ('article','appendix','preamble') for p in parts),review_count=sum(p['review'] for p in parts))
     @a.app.post('/api/regulations/save')
     @a.protected(True)
     def regulation_save_current():
         b=request.get_json(silent=True)
         if not isinstance(b,dict) or b.get('category') not in CATEGORIES or not isinstance(b.get('token'),str):abort(400)
-        manual=b.get('mode')=='manual'
-        if manual:
-            title=b.get('title')
-            if not isinstance(title,str) or not title.strip() or len(title)>200:return jsonify(error='제목을 200자 이내로 입력하세요.'),400
-        try:parts=checked(b.get('body'))
+        try:checked(b.get('body'))
         except ValueError as exc:return jsonify(error=str(exc)),400
         with a.db() as c:
-            c.execute('BEGIN IMMEDIATE');old=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
+            c.execute('BEGIN IMMEDIATE')
+            old=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if b['token']!=(old['token'] if old else ''):abort(409)
             updated=a.stamp();token=secrets.token_hex(16)
+            c.execute('INSERT INTO regulation_documents VALUES(?,?,?,?) ON CONFLICT(category) DO UPDATE SET body=excluded.body,updated=excluded.updated,token=excluded.token',(b['category'],b['body'],updated,token))
             c.execute('DELETE FROM regulation_deleted_categories WHERE category=?',(b['category'],))
-            if manual:
-                # Append one manual item, preserving the existing category document and index.
-                current=c.execute('SELECT body FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
-                old_body=current['body'] if current else ''
-                combined=old_body+('\n\n' if old_body else '')+title.strip()+'\n'+b['body']
-                if len(combined)>LIMIT:return jsonify(error='카테고리 원문은 최대 200만 글자입니다.'),400
-                c.execute('INSERT INTO regulation_documents VALUES(?,?,?,?) ON CONFLICT(category) DO UPDATE SET body=excluded.body,updated=excluded.updated,token=excluded.token',(b['category'],combined,updated,token))
-                position=c.execute('SELECT COALESCE(MAX(position),-1)+1 FROM regulation_articles WHERE category=?',(b['category'],)).fetchone()[0]
-                text=title.strip()+'\n'+b['body']
-                c.execute('INSERT INTO regulation_articles VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(b['category'],position,'manual','','','',title.strip(),text,normalize(title),normalize(text),0,'[]'))
-            else:
-                store_document(c,b['category'],b['body'],parts,updated,token)
-            c.execute('INSERT INTO regulation_index_version VALUES(?,2) ON CONFLICT(category) DO UPDATE SET version=excluded.version',(b['category'],))
             a.log(c,'법령·규정 원문 저장',b['category'])
         return jsonify(ok=True,updated=updated)
     @a.app.post('/api/regulations/delete')
@@ -153,32 +100,7 @@ def install(a):
             row=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if not row or row['token']!=b['token']:abort(409)
             c.execute('DELETE FROM regulation_articles WHERE category=?',(b['category'],))
-            c.execute('DELETE FROM regulation_index_version WHERE category=?',(b['category'],))
             c.execute('DELETE FROM regulation_documents WHERE category=?',(b['category'],))
             c.execute('INSERT OR IGNORE INTO regulation_deleted_categories(category) VALUES(?)',(b['category'],))
             a.log(c,'법령·규정 삭제',b['category'])
         return jsonify(ok=True)
-    @a.app.get('/api/regulations/archive')
-    @a.protected()
-    def regulation_archive_current():
-        q=request.args.get('q','').strip();category=request.args.get('category','')
-        if len(q)>200 or (category and category not in CATEGORIES):abort(400)
-        normalized=normalize(q);number=number_key(q);counts={key:0 for key in CATEGORIES};results=[]
-        with a.db() as c:
-            records=[dict(r) for r in c.execute('SELECT a.*,d.updated FROM regulation_articles a JOIN regulation_documents d ON d.category=a.category')]
-        order={key:i for i,key in enumerate(CATEGORIES)}
-        for item in records:
-            if item['category'] not in CATEGORIES or item['kind'] not in ('article','manual','appendix','preamble'):continue
-            if normalized:
-                number_match=bool(number and item['number']==number)
-                title_match=number_match or normalized in item['search_title']
-                if not title_match and normalized not in item['search_body']:continue
-                rank=0 if title_match else 1
-            else:rank=0
-            counts[item['category']]+=1
-            if category and item['category']!=category:continue
-            item['category_name']=CATEGORIES[item['category']];item['preview']=snippet(item['body'],q) if normalized and rank else snippet(item['body'],'');item['_rank']=rank
-            del item['search_title'],item['search_body'];results.append(item)
-        results.sort(key=lambda x:(x['_rank'],order[x['category']],x['position']))
-        for item in results:del item['_rank']
-        return jsonify(items=results,counts=counts,total=sum(counts.values()))
