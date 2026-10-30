@@ -20,10 +20,16 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:ass
   await page.locator('.regulations-hit').first().click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'7');
   assert.equal(await page.locator('#primary-line-1').count(),0);
   await page.locator('.regulations-toc [data-line="6"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'6');
-  await page.evaluate(()=>{regulationsDocs=[{category:'union_act',body:'목 차\n제1장 총칙\n제1조(목적) ........ 1\n제2조(정의) ........ 2\n제1장 총칙\n제1조(목적) 이 법은 노동조합에 관한 사항을 정한다.\n제2조(정의) ① 용어의 뜻은 다음과 같다.'}];regulationsSearch='';regulationsFilter='union_act';renderRegulationResults()});
-  assert.equal(await page.locator('#primary-line-2').count(),0);
-  await page.locator('.regulations-toc [data-line="5"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'5');
-  await page.locator('.regulations-toc [data-line="4"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'4');
+  await page.evaluate(()=>{regulationsDocs=[{category:'union_act',body:'제1장 총칙\n제1조(목적) 이 법은 노동조합에 관한 사항을 정한다.\n제2조의2【정의】 ① 다음과 같다.\n제4조에 따른 인용 본문'}];regulationsSearch='';regulationsFilter='union_act';renderRegulationResults()});
+  assert.deepEqual(await page.locator('.regulations-toc [data-line]').allTextContents(),['제1장 총칙','제1조(목적)','제2조의2【정의】']);
+  await page.locator('.regulations-toc [data-line="1"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('id'),'primary-line-1');
+  assert.match(await page.locator('#primary-line-1').textContent(),/이 법은 노동조합/);
+  await page.evaluate(()=>{regulationsDocs=[{category:'work_technical',body:'5. 복무\n5.1 규율\n5.1.1 직원의 의무\n(1) 일반 본문\n① 내용\n- 내용\n1. "근로자"란 사람을 말한다.'}];regulationsSearch='';regulationsFilter='work_technical';renderRegulationResults()});
+  assert.deepEqual(await page.locator('.regulations-toc [data-line]').allTextContents(),['5. 복무','5.1 규율','5.1.1 직원의 의무']);
+  assert.equal(await page.locator('.regulations-toc [data-line="0"]').getAttribute('class'),'toc-chapter toc-level-1');
+  assert.equal(await page.locator('.regulations-toc [data-line="1"]').getAttribute('class'),'toc-article toc-level-2');
+  assert.equal(await page.locator('.regulations-toc [data-line="2"]').getAttribute('class'),'toc-article toc-level-3');
+  for(const i of [0,1,2]){await page.locator('.regulations-toc [data-line="'+i+'"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('id'),'primary-line-'+i)}
   await page.close();
  }
  console.log('PASS: desktop admin/viewer width, TOC, scrolling, copying, search and comparison');

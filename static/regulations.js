@@ -4,6 +4,24 @@ const regulationsCategories=[['union_act','노동조합법'],['labor_act','근�
 const regLabel=key=>regulationsCategories.find(x=>x[0]===key)?.[1]||key;
 const regLines=text=>text.split(/\r\n|\r|\n/);
 const regHeading=line=>/^\s*(?:제\s*\d+\s*(?:장|절)|\d+\)\s*.*세칙)/.test(line)?'chapter':/^\s*(?:제\s*\d+\s*조(?:\s*의\s*\d+)?(?:\s|[([【]|$)|\d+\.\d+\.\d+(?:\s|$)|[■▣])/.test(line)?'article':'';
+// Extract only the heading label, never the text that follows an article title.
+function regTocEntry(line,category){
+ const chapter=line.match(/^\s*(제\s*\d+\s*(?:장|절)(?:\s*의\s*\d+)?\s*[^\n]*?)(?=\s*(?:제\s*\d+\s*조(?:\s*의\s*\d+)?\s*[([【]|[①②③④⑤⑥⑦⑧⑨⑩])|$)/);
+ if(chapter)return {type:'chapter',level:1,label:chapter[1].trim()};
+ const article=line.match(/^\s*(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:\([^)]*\)|\[[^\]]*\]|【[^】]*】))/);
+ if(article)return {type:'article',level:2,label:article[1].trim()};
+ // Numeric headings are restricted to work-rule documents when a category is known.
+ const text=line.trim(),workRules=!category||category==='work_general'||category==='work_technical';
+ if(workRules){
+  const length=[...text].length;
+  if(length<=40&&/^\d+\.\d+\.\d+\s+\S/.test(text))return {type:'article',level:3,label:text};
+  if(length<=40&&/^\d+\.\d+\s+\S/.test(text))return {type:'article',level:2,label:text};
+  if(length<=25&&/^\d+\.\s+\S/.test(text)&&!/다\.$/.test(text)&&!/["“”]/.test(text))return {type:'chapter',level:1,label:text};
+ }
+ const bylaws=line.match(/^\s*(\d+\)\s*[^\n]{0,80}?세칙)(?:\s*$|\s*[①②③④⑤⑥⑦⑧⑨⑩])/);
+ if(bylaws)return {type:'chapter',level:1,label:bylaws[1].trim()};
+ return null;
+}
 const regRegex=q=>new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
 function regHighlight(text,q){if(!q)return esc(text);const regex=regRegex(q);let html='',last=0,m;while((m=regex.exec(text))){html+=esc(text.slice(last,m.index))+'<mark>'+esc(m[0])+'</mark>';last=m.index+m[0].length}return html+esc(text.slice(last))}
 function closeRegulations(){regulationsActive=false;regulationsTicket++;$('#regulationsPanel').hidden=true;$('#readerRegulationsTab').classList.remove('active');$('#readerRegulationsTab').setAttribute('aria-pressed','false');document.body.classList.remove('regulations-open')}
@@ -17,14 +35,12 @@ async function loadRegulations(){const ticket=++regulationsTicket;try{const data
 // Identify a leading contents list only when an empty heading repeats with real body text.
 function regTocRange(lines){
  const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));
- const parseHeading=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】](.*)$/);return m?{key:m[1]+':'+(m[2]||''),tail:m[3].trim()}:null};
+ const keyFor=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】]\s*$/);return m?m[1]+':'+(m[2]||''):null};
  const first=new Map();
  for(let i=Math.max(0,marker+1);i<lines.length;i++){
-  const parsed=parseHeading(lines[i]);if(!parsed)continue;const key=parsed.key;
+  const key=keyFor(lines[i]);if(!key)continue;
   let next=i+1;while(next<lines.length&&!lines[next].trim())next++;
-  const pageNumber=/^(?:[.·…\s]+)?\d+\s*$/.test(parsed.tail);const hasInline=!!parsed.tail&&!pageNumber;
-  const nextIsPage=next<lines.length&&/^(?:[.·…\s]+)?\d+\s*$/.test(lines[next].trim());
-  const hasBody=hasInline||(next<lines.length&&!nextIsPage&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)(?:\s|$)/.test(lines[next]));
+  const hasBody=next<lines.length&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)\b/.test(lines[next]);
   if(!first.has(key)){if(!hasBody)first.set(key,i);continue}
   if(hasBody){const firstIndex=first.get(key);let start=marker>=0?marker:firstIndex;
    if(marker<0){while(start>0&&(!lines[start-1].trim()||regHeading(lines[start-1])))start--}
@@ -84,8 +100,8 @@ function renderRegViewer(container,doc,q,lineNumber){
 function mountRegPane(container,doc,q,lineNumber,prefix){
  const lines=regLines(doc.body),range=regTocRange(lines),showToc=Number.isInteger(lineNumber)&&range&&lineNumber>=range.start&&lineNumber<range.end;
  const visible=(i)=>!range||showToc||i<range.start||i>=range.end;
- const headings=lines.map((line,i)=>({line,i,type:regHeading(line)})).filter(x=>x.type&&visible(x.i));
- container.innerHTML=`<div class="reg-pane-tools"><label>문서 내 검색<input type="search" data-local-search value="${esc(q)}" placeholder="이 문서에서 검색"></label><button type="button" data-local-next>다음 찾기</button><span data-local-status role="status"></span><button type="button" data-copy>현재 조항 복사</button></div><div class="regulations-viewer"><aside class="regulations-toc" aria-label="원문 목차"><strong>${esc(regLabel(doc.category))}</strong>${headings.map(x=>`<button type="button" data-line="${x.i}" class="toc-${x.type}">${esc(x.line.trim())}</button>`).join('')||'<p class="hint">인식된 제목이 없습니다.</p>'}</aside><div class="regulations-document" tabindex="0" aria-label="규정 전문">${lines.map((line,i)=>visible(i)?`<div id="${prefix}-line-${i}" data-source-line="${i}" class="reg-line ${regHeading(line)}">${regHighlight(line,q)||'&#8203;'}</div>`:'').join('')}</div></div>`;
+ const headings=lines.map((line,i)=>({i,entry:regTocEntry(line,doc.category)})).filter(x=>x.entry&&visible(x.i));
+ container.innerHTML=`<div class="reg-pane-tools"><label>문서 내 검색<input type="search" data-local-search value="${esc(q)}" placeholder="이 문서에서 검색"></label><button type="button" data-local-next>다음 찾기</button><span data-local-status role="status"></span><button type="button" data-copy>현재 조항 복사</button></div><div class="regulations-viewer"><aside class="regulations-toc" aria-label="원문 목차"><strong>${esc(regLabel(doc.category))}</strong>${headings.map(x=>`<button type="button" data-line="${x.i}" class="toc-${x.entry.type} toc-level-${x.entry.level}">${esc(x.entry.label)}</button>`).join('')||'<p class="hint">인식된 제목이 없습니다.</p>'}</aside><div class="regulations-document" tabindex="0" aria-label="규정 전문">${lines.map((line,i)=>visible(i)?`<div id="${prefix}-line-${i}" data-source-line="${i}" class="reg-line ${regHeading(line)}">${regHighlight(line,q)||'&#8203;'}</div>`:'').join('')}</div></div>`;
  const documentEl=container.querySelector('.regulations-document'),local=container.querySelector('[data-local-search]'),status=container.querySelector('[data-local-status]');let selected=Number.isInteger(lineNumber)?lineNumber:0,localIndex=-1;documentEl.style.fontSize=regFontSize+'px';
  function go(i){const target=container.querySelector('[data-source-line="'+i+'"]');if(!target)return;selected=i;container.querySelectorAll('.reg-selected').forEach(x=>x.classList.remove('reg-selected'));target.classList.add('reg-selected');target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'})}
  container.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>go(Number(b.dataset.line)));
