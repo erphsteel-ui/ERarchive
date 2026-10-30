@@ -20,6 +20,10 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:ass
   await page.locator('.regulations-hit').first().click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'7');
   assert.equal(await page.locator('#primary-line-1').count(),0);
   await page.locator('.regulations-toc [data-line="6"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'6');
+  await page.evaluate(()=>{regulationsDocs=[{category:'union_act',body:'목 차\n제1장 총칙\n제1조(목적) ........ 1\n제2조(정의) ........ 2\n제1장 총칙\n제1조(목적) 이 법은 노동조합에 관한 사항을 정한다.\n제2조(정의) ① 용어의 뜻은 다음과 같다.'}];regulationsSearch='';regulationsFilter='union_act';renderRegulationResults()});
+  assert.equal(await page.locator('#primary-line-2').count(),0);
+  await page.locator('.regulations-toc [data-line="5"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'5');
+  await page.locator('.regulations-toc [data-line="4"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('data-source-line'),'4');
   await page.close();
  }
  console.log('PASS: desktop admin/viewer width, TOC, scrolling, copying, search and comparison');

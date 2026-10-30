@@ -17,12 +17,14 @@ async function loadRegulations(){const ticket=++regulationsTicket;try{const data
 // Identify a leading contents list only when an empty heading repeats with real body text.
 function regTocRange(lines){
  const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));
- const keyFor=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】]\s*$/);return m?m[1]+':'+(m[2]||''):null};
+ const parseHeading=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】](.*)$/);return m?{key:m[1]+':'+(m[2]||''),tail:m[3].trim()}:null};
  const first=new Map();
  for(let i=Math.max(0,marker+1);i<lines.length;i++){
-  const key=keyFor(lines[i]);if(!key)continue;
+  const parsed=parseHeading(lines[i]);if(!parsed)continue;const key=parsed.key;
   let next=i+1;while(next<lines.length&&!lines[next].trim())next++;
-  const hasBody=next<lines.length&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)\b/.test(lines[next]);
+  const pageNumber=/^(?:[.·…\s]+)?\d+\s*$/.test(parsed.tail);const hasInline=!!parsed.tail&&!pageNumber;
+  const nextIsPage=next<lines.length&&/^(?:[.·…\s]+)?\d+\s*$/.test(lines[next].trim());
+  const hasBody=hasInline||(next<lines.length&&!nextIsPage&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)(?:\s|$)/.test(lines[next]));
   if(!first.has(key)){if(!hasBody)first.set(key,i);continue}
   if(hasBody){const firstIndex=first.get(key);let start=marker>=0?marker:firstIndex;
    if(marker<0){while(start>0&&(!lines[start-1].trim()||regHeading(lines[start-1])))start--}

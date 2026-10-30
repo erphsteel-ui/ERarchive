@@ -10,4 +10,5 @@ assert.equal(run("regFind([{category:'a',body:'a+b a+b'}],'a+b')[0].count"),2);
 assert.equal(run("regHighlight('<script>근로시간</script>','근로시간')"),'&lt;script&gt;<mark>근로시간</mark>&lt;/script&gt;');
 assert.equal(run(`regTocRange(['제1장 총칙','제1조(목적)','제2조(정의)','제1장 총칙','제1조(목적)','① 내용']).end`),3);
 assert.equal(run(`regTocRange(['제1조(목적)','① 본문','제2조(정의)','② 본문'])`),null);
+assert.deepEqual(JSON.parse(JSON.stringify(run(`regTocRange(['목 차','제1장 총칙','제1조(목적) ........ 1','제2조(정의) ........ 2','제1장 총칙','제1조(목적) 이 법은 노동조합에 관한 사항을 정한다.','제2조(정의) ① 용어의 뜻은 다음과 같다.'])`))),{start:0,end:4});
 console.log('PASS: article deduplication, keyword-centered snippets and TOC detection');
