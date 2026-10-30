@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash
 class RegulationTests(unittest.TestCase):
  def setUp(self):
   with app.db() as c:
-   c.execute('DELETE FROM regulation_articles');c.execute('DELETE FROM regulation_documents')
+   c.execute('DELETE FROM regulation_articles');c.execute('DELETE FROM regulation_documents');c.execute('DELETE FROM regulation_deleted_categories')
    c.execute("INSERT OR REPLACE INTO users VALUES('regadmin',?,'admin')",(generate_password_hash('reg-admin-password'),))
    c.execute("INSERT OR REPLACE INTO users VALUES('regreader',?,'viewer')",(generate_password_hash('reg-reader-password'),))
   self.admin=app.app.test_client();self.reader=app.app.test_client();self.guest=app.app.test_client()
@@ -101,4 +101,21 @@ class RegulationTests(unittest.TestCase):
   self.assertIn('<b>문자열</b>',result['items'][1]['body'])
   with app.db() as c:self.assertIn('머리말',c.execute("SELECT body FROM regulation_documents WHERE category='agreement'").fetchone()[0])
   data['title']='';self.assertEqual(self.admin.post('/api/regulations/save',json=data,headers=self.h).status_code,400)
+ def test_delete_category_permissions_conflict_and_persistence(self):
+  self.assertEqual(self.save('agreement','제1조(근로시간)\n내용').status_code,200)
+  self.assertEqual(self.save('labor_act','제50조(근로시간)\n유지').status_code,200)
+  token=self.admin.get('/api/regulations/document?category=agreement').json['document']['token']
+  payload={'category':'agreement','token':token}
+  self.assertEqual(self.reader.post('/api/regulations/delete',json=payload,headers=self.rh).status_code,403)
+  self.assertEqual(self.guest.post('/api/regulations/delete',json=payload).status_code,401)
+  self.assertEqual(self.admin.post('/api/regulations/delete',json=payload).status_code,403)
+  self.assertEqual(self.admin.post('/api/regulations/delete',json={'category':'agreement','token':'stale'},headers=self.h).status_code,409)
+  self.assertEqual(self.admin.post('/api/regulations/delete',json=payload,headers=self.h).status_code,200)
+  self.assertIsNone(self.admin.get('/api/regulations/document?category=agreement').json['document'])
+  result=self.admin.get('/api/regulations/archive?q=근로시간').json
+  self.assertEqual(result['counts']['agreement'],0);self.assertEqual(result['counts']['labor_act'],1)
+  self.assertEqual(self.admin.post('/api/regulations/delete',json=payload,headers=self.h).status_code,409)
+  with app.db() as c:self.assertTrue(c.execute("SELECT 1 FROM regulation_deleted_categories WHERE category='agreement'").fetchone())
+  self.assertEqual(self.save('agreement','제2조(새 규정)\n내용').status_code,200)
+  with app.db() as c:self.assertFalse(c.execute("SELECT 1 FROM regulation_deleted_categories WHERE category='agreement'").fetchone())
 if __name__=='__main__':unittest.main()

@@ -24,10 +24,11 @@ def install(a):
         CREATE TABLE IF NOT EXISTS regulation_articles(category TEXT NOT NULL REFERENCES regulation_documents(category) ON DELETE CASCADE,position INTEGER NOT NULL,kind TEXT NOT NULL,chapter TEXT NOT NULL,section TEXT NOT NULL,number TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,search_title TEXT NOT NULL,search_body TEXT NOT NULL,needs_review INTEGER NOT NULL,PRIMARY KEY(category,position));''')
         if 'structure' not in {row[1] for row in c.execute('PRAGMA table_info(regulation_articles)')}:
             c.execute("ALTER TABLE regulation_articles ADD COLUMN structure TEXT NOT NULL DEFAULT '[]'")
+        c.execute('CREATE TABLE IF NOT EXISTS regulation_deleted_categories(category TEXT PRIMARY KEY)')
         legacy=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='regulation_versions'").fetchone()
         if legacy:
             for old,new in LEGACY_SAFE.items():
-                if c.execute('SELECT 1 FROM regulation_documents WHERE category=?',(new,)).fetchone():continue
+                if c.execute('SELECT 1 FROM regulation_documents WHERE category=?',(new,)).fetchone() or c.execute('SELECT 1 FROM regulation_deleted_categories WHERE category=?',(new,)).fetchone():continue
                 row=c.execute('SELECT body,created FROM regulation_versions WHERE category=? ORDER BY version DESC LIMIT 1',(old,)).fetchone()
                 if row and row['body'] and row['body'].strip():
                     try:parts=parse_document(row['body'])
@@ -99,6 +100,7 @@ def install(a):
             c.execute('BEGIN IMMEDIATE');old=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if b['token']!=(old['token'] if old else ''):abort(409)
             updated=a.stamp();token=secrets.token_hex(16)
+            c.execute('DELETE FROM regulation_deleted_categories WHERE category=?',(b['category'],))
             if manual:
                 # Append one manual item, preserving the existing category document and index.
                 current=c.execute('SELECT body FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
@@ -113,6 +115,20 @@ def install(a):
                 store_document(c,b['category'],b['body'],parts,updated,token)
             a.log(c,'법령·규정 원문 저장',b['category'])
         return jsonify(ok=True,updated=updated)
+    @a.app.post('/api/regulations/delete')
+    @a.protected(True)
+    def regulation_delete():
+        b=request.get_json(silent=True)
+        if not isinstance(b,dict) or b.get('category') not in CATEGORIES or not isinstance(b.get('token'),str) or not b['token']:abort(400)
+        with a.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
+            if not row or row['token']!=b['token']:abort(409)
+            c.execute('DELETE FROM regulation_articles WHERE category=?',(b['category'],))
+            c.execute('DELETE FROM regulation_documents WHERE category=?',(b['category'],))
+            c.execute('INSERT OR IGNORE INTO regulation_deleted_categories(category) VALUES(?)',(b['category'],))
+            a.log(c,'법령·규정 삭제',b['category'])
+        return jsonify(ok=True)
     @a.app.get('/api/regulations/archive')
     @a.protected()
     def regulation_archive_current():
