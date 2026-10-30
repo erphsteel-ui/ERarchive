@@ -453,3 +453,36 @@ body.regulations-open main,body.viewerrole.regulations-open main{max-width:none;
 .regulations-viewer{width:100%;min-width:0;display:flex;border:0;border-radius:0}.regulations-toc,body.viewerrole .regulations-toc{position:static;inset:auto;display:block;flex:0 0 260px;width:260px;max-width:260px;height:auto;max-height:75vh;padding:14px;background:transparent;color:inherit;border-right:1px solid var(--line);overflow:auto}.regulations-document{flex:1 1 0;min-width:0;width:100%;max-height:75vh;overflow:auto}.regulations-compare.is-comparing .regulations-toc,body.viewerrole .regulations-compare.is-comparing .regulations-toc{flex-basis:140px;width:140px;max-width:140px}.regulations-hit pre{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden}
 @media(max-width:1000px){.regulations-split{grid-template-columns:1fr}.regulations-result-list{max-height:35vh}.regulations-compare.is-comparing{flex-wrap:wrap}.regulations-compare.is-comparing>.reg-pane{flex-basis:100%}.regulations-compare.is-comparing>.reg-pane+ .reg-pane{border-left:0;border-top:1px solid var(--line)}}
 @media(max-width:650px){.regulations-toc,body.viewerrole .regulations-toc{flex-basis:110px;width:110px;max-width:110px}.regulations-document{padding:12px}.reg-pane-tools label{flex-basis:100%}}
+/* Schedule overview header and controls. */
+#schedulePanel .schedule-header{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:12px}
+#schedulePanel .schedule-header-title{min-width:0}#schedulePanel .schedule-header-actions{justify-self:end;justify-content:flex-end}
+#schedulePanel .schedule-ddays{justify-self:center;flex:none;justify-content:center;max-width:min(700px,100%);padding:6px 12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03)}
+#schedulePanel .schedule-dday-badge{padding:8px 16px;border-radius:9999px;font-size:0.95rem;font-weight:600;max-width:250px}
+#schedulePanel .schedule-dday-badge strong{padding:3px 7px;border-radius:9999px;background:rgba(255,255,255,.10);font-weight:800}
+#schedulePanel .schedule-dday-badge.schedule-dday-soon{box-shadow:0 0 12px rgba(245,158,11,.25)}
+#schedulePanel .schedule-control-bar{display:flex;align-items:center;gap:0;flex-wrap:wrap;padding:10px 16px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(15,23,42,.6);margin:0 0 12px}
+#schedulePanel .schedule-control-group{display:flex;align-items:center;gap:8px;min-width:0}
+#schedulePanel .schedule-month-group{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#schedulePanel .schedule-month-group button,#schedulePanel .schedule-month-group input{margin:0;border:0;border-radius:0;background:transparent}#schedulePanel .schedule-month-group input{width:145px;text-align:center;border-inline:1px solid var(--line)}
+#schedulePanel .schedule-control-divider{flex:none;width:1px;height:20px;background:rgba(255,255,255,.12);margin:0 12px}
+#schedulePanel .schedule-view-toggle{display:flex;align-items:center;gap:2px;padding:4px;border-radius:8px;background:#0f172a;border:1px solid rgba(255,255,255,.08)}
+#schedulePanel .schedule-view-toggle button{border:0;background:transparent;color:#b9c5d6;border-radius:6px}#schedulePanel .schedule-view-toggle button[aria-pressed=true]{background:#10b981;color:#fff;font-weight:600;box-shadow:0 2px 6px rgba(16,185,129,.3)}
+#schedulePanel .schedule-utilities{margin-left:auto}#schedulePanel #scheduleCopyWeek{background:rgba(255,255,255,.05)}#schedulePanel #scheduleCopyWeek:hover{background:rgba(255,255,255,.1);border-color:#64748b}
+#schedulePanel #scheduleView{background:#273858;border-color:#425f91;color:#dce9ff}#schedulePanel .schedule-review-count{display:inline-block;margin-left:3px;padding:2px 7px;border-radius:999px;background:#536da7;color:#fff;font-weight:700}
+html[data-theme="light"] #schedulePanel .schedule-control-bar{background:#edf2f8;border-color:#d5dfea}html[data-theme="light"] #schedulePanel .schedule-ddays{background:#f1f5f9;border-color:#cbd5e1}html[data-theme="light"] #schedulePanel .schedule-control-divider{background:#cbd5e1}html[data-theme="light"] #schedulePanel #scheduleCopyWeek{background:#fff;color:#25364b}html[data-theme="light"] #schedulePanel #scheduleView{background:#e0eaff;color:#233c70}
+@media(max-width:1250px){#schedulePanel .schedule-header{grid-template-columns:1fr 1fr}#schedulePanel .schedule-header-title{grid-column:1;grid-row:1}#schedulePanel .schedule-header-actions{grid-column:2;grid-row:1}#schedulePanel .schedule-ddays{grid-column:1/-1;grid-row:2}#schedulePanel .schedule-control-bar{gap:8px}#schedulePanel .schedule-control-divider{margin:0 4px}}
+@media(max-width:700px){#schedulePanel .schedule-header{display:flex;align-items:flex-start;flex-wrap:wrap}#schedulePanel .schedule-header-actions{justify-content:flex-start}#schedulePanel .schedule-ddays{width:100%;justify-content:flex-start}#schedulePanel .schedule-control-divider{display:none}#schedulePanel .schedule-utilities{margin-left:0}#schedulePanel .schedule-control-bar{justify-content:flex-start}#schedulePanel .schedule-dday-badge{max-width:100%}}
+/* The two global rows remain independent of the currently open page. */
+body.viewerrole main,body:not(.viewerrole) main,body.viewerrole.regulations-open main,body.schedule-open.viewerrole main{max-width:none;width:100%;margin:0;padding:0 18px 24px}
+body.viewerrole main{padding:0 18px 24px}
+body #workspace main>header.global-topbar{height:52px;min-height:52px;max-height:52px;display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;overflow:hidden}
+body:not(.viewerrole) .global-topbar .reader-home-title,body.viewerrole .global-topbar .reader-home-title{display:block;flex:0 0 auto;margin:0;font-size:12px;color:var(--ink);white-space:nowrap}
+.global-topbar .global-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:5px;margin-left:auto;min-width:0;overflow-x:auto;scrollbar-width:thin;white-space:nowrap}
+.global-topbar .global-actions>*{flex:none}.global-topbar #adminSyncStatus{white-space:nowrap}
+body #readerTabs,body.viewerrole #readerTabs,body:not(.viewerrole) #readerTabs{position:sticky;top:0;display:flex;align-items:center;flex-wrap:nowrap;gap:6px;min-height:44px;height:44px;margin:0 0 12px;padding:0 0 4px;border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;z-index:20}
+#readerTabs button{white-space:nowrap;flex:none}.reader-tabs-divider{flex:none}
+.archive-page-heading{margin:0 0 12px}.archive-page-heading h1{font-size:20px;margin:0 0 3px}.archive-page-heading p{margin:0}
+body:not(.viewerrole) #archiveContent .filters{margin-top:0}
+html[data-theme="light"] #readerTabs{border-color:#cbd5e1}
+@media(max-width:700px){body.viewerrole main,body:not(.viewerrole) main,body.viewerrole.regulations-open main{padding:0 12px 24px}.global-topbar .global-actions{justify-content:flex-start}.global-topbar .reader-home-title{font-size:11px!important}}
+@media(max-width:700px){body.schedule-open.viewerrole main{padding:0 12px 24px}}
