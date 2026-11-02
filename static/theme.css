@@ -490,3 +490,13 @@ html[data-theme="light"] #readerTabs{border-color:#cbd5e1}
 /* TOC hierarchy for chapter, article and numbered subclauses. */
 .regulations-toc button.toc-level-1{padding-left:6px;font-weight:700;color:#6ce1cb}.regulations-toc button.toc-level-2{padding-left:16px;font-weight:600}.regulations-toc button.toc-level-3{padding-left:28px;font-weight:400}
 html[data-theme="light"] .regulations-toc button.toc-level-1{color:#166534}
+/* Secondary publication filters */
+#categorySubFilters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 14px}#categorySubFilters[hidden]{display:none!important}
+.category-subtabs,.category-orgtypes{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.category-orgtypes{padding-left:10px;border-left:1px solid var(--line)}.category-org-label{font-size:11px;color:var(--muted);margin-right:2px}
+#categorySubFilters button{padding:5px 10px;font-size:12px;border-radius:999px;color:#a9b9c9;background:transparent;border:1px solid #344657}
+#categorySubFilters button[aria-pressed=true]{color:#b4f5e5;background:#17463a;border-color:#42b99c;font-weight:700}
+#categorySubFilters .category-orgtypes button{font-size:11px;padding:4px 8px}
+html[data-theme="light"] #categorySubFilters button{color:#334155;border-color:#cbd5e1}html[data-theme="light"] #categorySubFilters button[aria-pressed=true]{background:#dcfce7;color:#166534;border-color:#86b997}
+@media(max-width:650px){.category-orgtypes{border-left:0;padding-left:0;width:100%}}
+
+.regulations-toc button.toc-level-4{padding-left:40px;font-weight:400}

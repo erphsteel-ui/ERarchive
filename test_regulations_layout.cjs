@@ -30,6 +30,10 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:ass
   assert.equal(await page.locator('.regulations-toc [data-line="1"]').getAttribute('class'),'toc-article toc-level-2');
   assert.equal(await page.locator('.regulations-toc [data-line="2"]').getAttribute('class'),'toc-article toc-level-3');
   for(const i of [0,1,2]){await page.locator('.regulations-toc [data-line="'+i+'"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('id'),'primary-line-'+i)}
+  await page.evaluate(()=>{regulationsDocs=[{category:'pohang_bylaws',body:'1) 임원선거관리세칙\n제 1 장 총 칙\n제1조 (목 적)\n본문\n제 2 장 선거관리\n제 1 절 선거관리위원회\n제5조 (선거관리위원회 구성)\n본문'}];regulationsSearch='';regulationsFilter='pohang_bylaws';renderRegulationResults()});
+  const expected=['toc-chapter toc-level-1','toc-chapter toc-level-2','toc-article toc-level-4','toc-chapter toc-level-2','toc-chapter toc-level-3','toc-article toc-level-4'];
+  assert.deepEqual(await page.locator('.regulations-toc [data-line]').evaluateAll(nodes=>nodes.map(n=>n.className)),expected);
+  await page.locator('.regulations-toc [data-line="5"]').click();assert.equal(await page.locator('.reg-selected').getAttribute('id'),'primary-line-5');
   await page.close();
  }
  console.log('PASS: desktop admin/viewer width, TOC, scrolling, copying, search and comparison');

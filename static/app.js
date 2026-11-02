@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-let user, docs=[], orgs=[], company='', draftOnly=false, current=null, page=0, dirty=false, selectedCategory='';
+let user, docs=[], orgs=[], company='', draftOnly=false, current=null, page=0, dirty=false, selectedCategory='', selectedSubCategory='', selectedOrgType='';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(s){$('#toast').textContent=s;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,5000)}
 async function api(path, body, form=false){let opts={};if(body!==undefined){opts={method:'POST',headers:{'X-CSRF':user?.csrf||''},body:form?body:JSON.stringify(body)};if(!form)opts.headers['Content-Type']='application/json'}const r=await fetch('/api/'+path,opts);const data=await r.json();if(!r.ok)throw Error(data.error||'요청을 처리하지 못했습니다.');return data}
@@ -22,7 +22,7 @@ function render(){
  const ds=docs.filter(d=>(!company||d.company===company)&&(user.role!=='admin'||(draftOnly?d.state==='draft':d.state==='published'))&&(!p||d.publishers.includes(p))&&(!from||(d.date&&d.date>=from))&&(!to||(d.date&&d.date<=to))&&(!q||docMatch(d,q))).sort((a,b)=>String(b[user.role==='admin'?$('#sort').value:'date']||'').localeCompare(String(a[user.role==='admin'?$('#sort').value:'date']||'')) || b.created.localeCompare(a.created));
  $('#listTitle').textContent=user.role==='admin'?(draftOnly?'확인 필요':company||'전체 자료'):(q||p||from||to||company?'검색 결과':'전체 자료');$('#resultCount').textContent=ds.length+'건';$('#empty').hidden=ds.length>0;
  if(!draftOnly){ $('#cards').innerHTML=''; renderGroups(ds,p,q); return; }
- $('#publisherGroups').innerHTML='';
+ $('#publisherGroups').innerHTML='';$('#categorySubFilters').hidden=true;
  $('#cards').innerHTML=ds.map(d=>`<article class="card" data-id="${esc(d.id)}" tabindex="0" role="button"><div class="thumb"><img loading="lazy" src="/api/image/${d.pages[0]?.id}" alt="${esc(d.title)} 첫 장"><span class="badge">${d.state==='draft'?'확인 필요':esc(d.kind)}</span></div><div class="cardbody"><h3 class="card-publisher">${esc(d.publishers.join(' · ')||'미분류')}</h3><p class="card-title">${esc(d.title)}${unknownTitle(d)?` <button type="button" class="inline-title-edit" data-title-edit="${esc(d.id)}" aria-label="제목 수정">✏️</button>`:''}${d.issue?` <span class="card-issue">${esc(d.issue)}</span>`:''}</p><div class="card-date">${publicationDate(d.date)}</div><div class="cardfoot"><span>${d.pages.length}장 ↗</span></div></div></article>`).join('');$$('[data-id]').forEach(b=>{b.onclick=()=>openDoc(b.dataset.id);b.onkeydown=e=>{if(e.target===b&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openDoc(b.dataset.id)}}});setupInlineTitles();
 
 }
@@ -35,7 +35,7 @@ $('#adminLogin').onclick=async()=>{$('#login').hidden=false;$('#workspace').hidd
 $('#cancelLogin').onclick=()=>{$('#login').hidden=true;$('#workspace').hidden=false};
 $('#logout').onclick=async()=>{await api('logout',{});location.reload()};
 for(const id of ['search','publisher','from','to','sort','fuzzySearch'])$('#'+id).addEventListener(id==='search'?'input':'change',render);
-$('#allNav').onclick=()=>{company='';draftOnly=false;render()};$('#draftNav').onclick=()=>{company='';draftOnly=true;render()};$('#reset').onclick=()=>{for(const id of ['search','publisher','from','to'])$('#'+id).value='';company='';draftOnly=false;selectedCategory='';$('#fuzzySearch').checked=false;render()};
+$('#allNav').onclick=()=>{company='';draftOnly=false;render()};$('#draftNav').onclick=()=>{company='';draftOnly=true;render()};$('#reset').onclick=()=>{for(const id of ['search','publisher','from','to'])$('#'+id).value='';company='';draftOnly=false;selectedCategory='';selectedSubCategory='';selectedOrgType='';$('#fuzzySearch').checked=false;render()};
 $$('[data-close]').forEach(b=>b.onclick=()=>$('#'+b.dataset.close).close());$('#uploadButton').onclick=()=>$('#uploadDialog').showModal();
 $('#files').onchange=()=>{uploadURLs.forEach(URL.revokeObjectURL);uploadFiles=[...$('#files').files].sort((a,b)=>a.name.replace(/\.[^.]+$/,'').localeCompare(b.name.replace(/\.[^.]+$/,''),'ko',{numeric:true}));uploadURLs=uploadFiles.map(f=>URL.createObjectURL(f));renderUploadOrder()};
 $('#uploadForm').onsubmit=async e=>{e.preventDefault();const files=uploadFiles;if(files.length>20||files.reduce((s,f)=>s+f.size,0)>60*1024*1024)return toast('최대 20장·총 60MB까지 선택해 주세요.');if(!files.length)return toast('이미지를 선택하세요.');const form=new FormData();files.forEach(f=>form.append('files',f));form.append('mode',$('#batchMode').value);$('#uploadSubmit').disabled=true;$('#uploadStatus').textContent='원본을 저장하는 중… 업로드가 완료될 때까지 창을 유지하세요.';try{await api('batches',form,true);$('#uploadDialog').close();e.target.reset();uploadURLs.forEach(URL.revokeObjectURL);uploadFiles=[];uploadURLs=[];renderUploadOrder();await openBatches();toast('대기열에 추가했습니다. 이제 다른 화면을 사용해도 됩니다.')}catch(e){toast(e.message)}finally{$('#uploadSubmit').disabled=false;$('#uploadStatus').textContent=''}};
@@ -71,13 +71,57 @@ $('#orgButton').onclick=()=>{$('#orgs').value=orgs.join('\n');$('#orgDialog').sh
 $('#auditButton').onclick=async()=>{try{const rows=await api('audit');$('#auditList').innerHTML=rows.map(r=>`<p>${esc(r.time)} · ${esc(r.actor)}<br><b>${esc(r.action)}</b> <small>${esc(r.doc)}</small></p>`).join('');$('#auditDialog').showModal()}catch(e){toast(e.message)}};
 let uploadFiles=[],uploadURLs=[];
 const categoryNames=['회사','집행부','제조직','계열사','그룹사','기타'];
+// Classify each publisher separately so a multi-publisher item can appear in multiple tabs.
+const subTabDefaults={'집행부':['당진','인천','포항','당진냉연','순천'],'계열사':['비정규직지회','IMC지회','ITC지회','ISC지회'],'그룹사':['현대차','기아','모비스','위아','트랜시스','로템','케피코']};
+function normalizedSubMatch(category,value){
+ const text=String(value||'').normalize('NFKC').replace(/\s+/g,'').toUpperCase();
+ if(category==='집행부'){if(text.includes('당진냉연'))return '당진냉연';return ['당진','인천','포항','순천'].find(x=>text.includes(x))||''}
+ if(category==='계열사'){if(text.includes('비정규')||text.includes('비지회'))return '비정규직지회';for(const name of ['IMC','ITC','ISC'])if(text.includes(name))return name+'지회';return ''}
+ if(category==='그룹사'){if(['현대자동차','현대차','현대자','현자'].some(x=>text.includes(x)))return '현대차';return ['기아','모비스','위아','트랜시스','로템','케피코'].find(x=>text.includes(x))||''}
+ return '';
+}
+function docSubCategories(doc,category){
+ const pubs=Array.isArray(doc.publishers)?doc.publishers.filter(x=>String(x).trim()):[];
+ const titleMatch=normalizedSubMatch(category,doc.title);const matches=[];
+ for(const pub of pubs){const value=normalizedSubMatch(category,pub)||titleMatch||(category==='집행부'?'기타(본조/공통)':String(pub).trim());if(value&&!matches.includes(value))matches.push(value)}
+ if(!matches.length)matches.push(titleMatch||(category==='집행부'?'기타(본조/공통)':'미분류'));
+ return matches;
+}
+function docOrgTypes(doc,company=''){
+ const types=new Set();for(const publisher of (doc.publishers||[])){
+  const mapped=normalizedSubMatch('그룹사',publisher)||normalizedSubMatch('그룹사',doc.title)||String(publisher).trim();
+  if(company&&mapped!==company)continue;
+  const text=String(publisher).normalize('NFKC').replace(/\s+/g,'');
+  if(text.includes('지부'))types.add('지부');if(text.includes('지회')||text.includes('비지회'))types.add('지회');
+  if(/제조직|현장조직|현장회|(?:민주노동자회|신의회|신진회|한길노동자회|대진회)/.test(text)||(/회$/.test(text)&&!/(?:지회|협의회|위원회|노동조합회)$/.test(text)))types.add('제조직');
+ }
+ return [...types];
+}
+function renderSubCategories(ds){
+ const host=$('#categorySubFilters');if(!subTabDefaults[selectedCategory]){host.hidden=true;host.replaceChildren();return ds}
+ const category=selectedCategory,base=ds.filter(d=>(d.categories||['기타']).includes(category));
+ const mapped=new Map(base.map(d=>[d,docSubCategories(d,category)]));
+ const defaults=subTabDefaults[category],extra=[...new Set(base.flatMap(d=>mapped.get(d)).filter(x=>!defaults.includes(x)))].sort((a,b)=>a.localeCompare(b,'ko'));
+ const opts=[...defaults,...extra],buttons=opts.map(label=>[label,base.filter(d=>mapped.get(d).includes(label)).length]).filter(([label,n])=>n||label===selectedSubCategory);
+ host.hidden=false;host.innerHTML=`<nav class="category-subtabs" aria-label="${esc(category)} 세부 분류"><button type="button" data-sub-category="" aria-pressed="${selectedSubCategory===''}">전체 (${base.length})</button>${buttons.map(([label,n])=>`<button type="button" data-sub-category="${esc(label)}" aria-pressed="${selectedSubCategory===label}">${esc(label)} (${n})</button>`).join('')}</nav><div id="categoryOrgTypes"></div>`;
+ host.querySelectorAll('[data-sub-category]').forEach(button=>button.onclick=()=>{selectedSubCategory=button.dataset.subCategory;selectedOrgType='';render()});
+ let narrowed=selectedSubCategory?base.filter(d=>mapped.get(d).includes(selectedSubCategory)):base;
+ if(category==='그룹사'){
+  const opts=['지부','지회','제조직'],bar=host.querySelector('#categoryOrgTypes');bar.className='category-orgtypes';bar.setAttribute('role','group');bar.setAttribute('aria-label','조직 유형 필터');
+  bar.innerHTML=`<span class="category-org-label">조직 유형</span><button type="button" data-org-type="" aria-pressed="${selectedOrgType===''}">전체 (${narrowed.length})</button>${opts.map(label=>[label,narrowed.filter(d=>docOrgTypes(d,selectedSubCategory).includes(label)).length]).filter(([label,n])=>n||label===selectedOrgType).map(([label,n])=>`<button type="button" data-org-type="${esc(label)}" aria-pressed="${selectedOrgType===label}">${esc(label)} (${n})</button>`).join('')}`;
+  bar.querySelectorAll('[data-org-type]').forEach(button=>button.onclick=()=>{selectedOrgType=button.dataset.orgType;render()});
+  if(selectedOrgType)narrowed=narrowed.filter(d=>docOrgTypes(d,selectedSubCategory).includes(selectedOrgType));
+ }
+ return narrowed;
+}
 function renderGroups(ds,selected,q){
  $('#categoryTabs').innerHTML=['전체',...categoryNames].map((c,i)=>`<button type="button" data-category="${i?c:''}" aria-pressed="${selectedCategory===(i?c:'')}" class="${selectedCategory===(i?c:'')?'active':''}">${c} (${i?ds.filter(d=>(d.categories||['기타']).includes(c)).length:ds.length})</button>`).join('');
- $$('[data-category]').forEach(b=>b.onclick=()=>{selectedCategory=b.dataset.category;render()});
+ $$('[data-category]').forEach(b=>b.onclick=()=>{selectedCategory=b.dataset.category;selectedSubCategory='';selectedOrgType='';render()});
+ const filtered=renderSubCategories(ds);
  const names=selectedCategory?[selectedCategory]:categoryNames;
  $('#publisherGroups').classList.toggle('single-category',!!selectedCategory);
  $('#publisherGroups').innerHTML=names.map(category=>{
- const rows=ds.filter(d=>(d.categories||['기타']).includes(category));
+ const rows=filtered.filter(d=>(d.categories||['기타']).includes(category));
  return `<section class="category-section"><h3>${category} (${rows.length})</h3><div class="column-list">${rows.map(d=>{
  const match=q?d.pages.find(p=>textMatches(p.text,q)):null;
  const approximate=q&&!docMatchExact(d,q);

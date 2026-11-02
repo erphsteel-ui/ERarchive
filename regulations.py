@@ -1,5 +1,6 @@
 """Current regulation documents and transactional article search index."""
-import json,secrets,io,zipfile
+import json,secrets,io,zipfile,time
+import law_api
 from xml.etree import ElementTree as ET
 from flask import abort, jsonify, request
 
@@ -18,6 +19,8 @@ def install(a):
         if 'structure' not in {row[1] for row in c.execute('PRAGMA table_info(regulation_articles)')}:
             c.execute("ALTER TABLE regulation_articles ADD COLUMN structure TEXT NOT NULL DEFAULT '[]'")
         c.execute('CREATE TABLE IF NOT EXISTS regulation_deleted_categories(category TEXT PRIMARY KEY)')
+        c.execute('CREATE TABLE IF NOT EXISTS law_import_candidates(id TEXT PRIMARY KEY, category TEXT NOT NULL, body TEXT NOT NULL, xml BLOB NOT NULL, metadata TEXT NOT NULL, actor TEXT NOT NULL, created INTEGER NOT NULL)')
+        c.execute('CREATE TABLE IF NOT EXISTS law_import_sources(category TEXT PRIMARY KEY, xml BLOB NOT NULL, metadata TEXT NOT NULL, imported_at TEXT NOT NULL)')
         # Preserve original documents; older article indexes remain untouched.
         legacy=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='regulation_versions'").fetchone()
         if legacy:
@@ -33,7 +36,10 @@ def install(a):
     @a.protected()
     def regulation_fulltexts():
         with a.db() as c:
-            docs=[dict(row) for row in c.execute('SELECT category,body,updated FROM regulation_documents') if row['category'] in CATEGORIES]
+            docs=[]
+            for row in c.execute('SELECT d.category,d.body,d.updated,s.metadata,s.imported_at FROM regulation_documents d LEFT JOIN law_import_sources s ON s.category=d.category'):
+                if row['category'] not in CATEGORIES:continue
+                item=dict(row);item['source']=json.loads(item.pop('metadata')) if item['metadata'] else None;docs.append(item)
         return jsonify(documents=docs)
     @a.app.get('/api/regulations/document')
     @a.protected(True)
@@ -74,6 +80,41 @@ def install(a):
         except (ValueError,UnicodeError,zipfile.BadZipFile,KeyError,ET.ParseError,RuntimeError,NotImplementedError):
             return jsonify(error='텍스트를 추출할 수 없습니다. 파일 형식 또는 인코딩을 확인하고 텍스트 붙여넣기를 사용하세요.'),400
         return jsonify(text=text)
+    @a.app.get('/api/regulations/law-key')
+    @a.protected(True)
+    def regulation_law_key_status():
+        import os
+        with a.db() as c:stored=c.execute("SELECT value FROM settings WHERE key='law_api_oc'").fetchone()
+        return jsonify(configured=bool(stored and stored[0]) or bool(os.environ.get('LAW_API_OC','').strip()),stored=bool(stored and stored[0]),environment=bool(os.environ.get('LAW_API_OC','').strip()))
+    @a.app.post('/api/regulations/law-key')
+    @a.protected(True)
+    def regulation_law_key_save():
+        b=request.get_json(silent=True)
+        if not isinstance(b,dict) or not isinstance(b.get('key'),str):abort(400)
+        key=b['key'].strip()
+        if key:
+            try:key=law_api.validate_oc(key)
+            except law_api.LawApiError as exc:return jsonify(error=str(exc)),400
+        with a.db() as c:
+            if key:c.execute("INSERT INTO settings(key,value) VALUES('law_api_oc',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,))
+            else:c.execute("DELETE FROM settings WHERE key='law_api_oc'")
+            a.log(c,'법령 API 인증값 설정' if key else '법령 API 인증값 삭제')
+        return jsonify(ok=True)
+    @a.app.post('/api/regulations/law-preview')
+    @a.protected(True)
+    def regulation_law_preview():
+        from flask import session
+        b=request.get_json(silent=True)
+        if not isinstance(b,dict) or b.get('category') not in law_api.LAWS:abort(400)
+        with a.db() as c:stored=c.execute("SELECT value FROM settings WHERE key='law_api_oc'").fetchone()
+        try:result,xml=law_api.fetch_law(b['category'],stored[0] if stored else None)
+        except law_api.LawApiError as exc:return jsonify(error=str(exc)),400
+        candidate=secrets.token_urlsafe(24)
+        with a.db() as c:
+            c.execute('DELETE FROM law_import_candidates WHERE created<?',(int(time.time())-3600,))
+            c.execute('DELETE FROM law_import_candidates WHERE actor=? AND category=?',(session['user'],b['category']))
+            c.execute('INSERT INTO law_import_candidates VALUES(?,?,?,?,?,?,?)',(candidate,b['category'],result['body'],xml,json.dumps({k:v for k,v in result.items() if k!='body'},ensure_ascii=False),session['user'],int(time.time())))
+        return jsonify(candidate=candidate,**result)
     @a.app.post('/api/regulations/save')
     @a.protected(True)
     def regulation_save_current():
@@ -81,11 +122,20 @@ def install(a):
         if not isinstance(b,dict) or b.get('category') not in CATEGORIES or not isinstance(b.get('token'),str):abort(400)
         try:checked(b.get('body'))
         except ValueError as exc:return jsonify(error=str(exc)),400
+        candidate=b.get('candidate','')
+        if not isinstance(candidate,str):abort(400)
         with a.db() as c:
             c.execute('BEGIN IMMEDIATE')
             old=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if b['token']!=(old['token'] if old else ''):abort(409)
             updated=a.stamp();token=secrets.token_hex(16)
+            if candidate:
+                from flask import session
+                row=c.execute('SELECT * FROM law_import_candidates WHERE id=? AND actor=? AND category=? AND created>=?',(candidate,session['user'],b['category'],int(time.time())-3600)).fetchone()
+                if not row or row['body']!=b['body']:return jsonify(error='가져온 법령이 변경되었거나 만료되었습니다. 다시 조회해 주세요.'),409
+                c.execute('INSERT INTO law_import_sources VALUES(?,?,?,?) ON CONFLICT(category) DO UPDATE SET xml=excluded.xml,metadata=excluded.metadata,imported_at=excluded.imported_at',(b['category'],row['xml'],row['metadata'],updated))
+                c.execute('DELETE FROM law_import_candidates WHERE id=?',(candidate,))
+            else:c.execute('DELETE FROM law_import_sources WHERE category=?',(b['category'],))
             c.execute('INSERT INTO regulation_documents VALUES(?,?,?,?) ON CONFLICT(category) DO UPDATE SET body=excluded.body,updated=excluded.updated,token=excluded.token',(b['category'],b['body'],updated,token))
             c.execute('DELETE FROM regulation_deleted_categories WHERE category=?',(b['category'],))
             a.log(c,'법령·규정 원문 저장',b['category'])
@@ -100,6 +150,7 @@ def install(a):
             row=c.execute('SELECT token FROM regulation_documents WHERE category=?',(b['category'],)).fetchone()
             if not row or row['token']!=b['token']:abort(409)
             c.execute('DELETE FROM regulation_articles WHERE category=?',(b['category'],))
+            c.execute('DELETE FROM law_import_sources WHERE category=?',(b['category'],))
             c.execute('DELETE FROM regulation_documents WHERE category=?',(b['category'],))
             c.execute('INSERT OR IGNORE INTO regulation_deleted_categories(category) VALUES(?)',(b['category'],))
             a.log(c,'법령·규정 삭제',b['category'])
