@@ -655,3 +655,6 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
 #scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event-wrap .schedule-event{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left}
 #scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event .schedule-actor{display:block;align-self:flex-start;text-align:left;margin:0 0 1px}
 #scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event b{align-self:stretch;text-align:left}
+/* 단어 경계에서 우선 줄바꿈하고 날짜 헤더를 세로 가운데에 둔다. */
+#scheduleMain .compact-calendar .schedule-event b,#scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event b,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event b{word-break:keep-all;overflow-wrap:break-word}
+#scheduleMain .compact-calendar thead th{vertical-align:middle}
