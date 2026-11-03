@@ -577,3 +577,54 @@ html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedul
 html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-other:not(.schedule-muted):hover{background:rgba(203,213,225,.7)}
 html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-muted{--light-border:#cbd5e1;--light-accent:#64748b}
 html[data-theme="light"] #scheduleMain .schedule-table{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+/* 통합 라이트 테마: 화이트 표면, 네이비 선택 상태, 앰버 강조. */
+:root[data-theme="light"]{--bg-primary:#f8fafc;--bg-secondary:#fff;--bg-tertiary:#fff;--border-color:#e2e8f0;--text-primary:#0f172a;--text-secondary:#475569;--accent-color:#172554;--accent-green:#172554;--surface:#fff;--blue:#172554;--chart-axis:#334155;--chart-grid:#e2e8f0}
+html[data-theme="light"] body,html[data-theme="light"] #workspace main{background:#f8fafc;color:#0f172a}
+html[data-theme="light"] body #workspace main>header.global-topbar{background:#fff;border-bottom:1px solid #e2e8f0}
+html[data-theme="light"] .archive-brand,html[data-theme="light"] .brand,html[data-theme="light"] .brand span{color:#0f172a;font-weight:800;letter-spacing:-.025em}
+html[data-theme="light"] body #readerTabs{background:#fff;border-bottom:1px solid #e2e8f0}
+html[data-theme="light"] #readerTabs button:not(.active):not(:disabled){background:transparent;border-color:transparent;color:#475569}
+html[data-theme="light"] #readerTabs button:not(.active):not(:disabled):hover{background:#f1f5f9;color:#0f172a}
+html[data-theme="light"] #readerTabs button.active,html[data-theme="light"] #readerTabs button.active:hover{background:#0f172a;color:#fff;border-color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.12)}
+html[data-theme="light"] #readerTabs button:disabled,html[data-theme="light"] #readerTabs button:disabled:hover,html[data-theme="light"] #readerTabs #readerMemoTab:not(.active){color:#94a3b8;background:transparent;text-decoration:line-through}
+html[data-theme="light"] button.primary,html[data-theme="light"] #scheduleUploadButton{background:#172554;color:#fff;border-color:#172554;font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.1)}
+html[data-theme="light"] button.primary:hover,html[data-theme="light"] #scheduleUploadButton:hover{background:#1e3a8a;border-color:#1e3a8a;color:#fff}
+html[data-theme="light"] :is(#categoryTabs,#categorySubFilters,.regulations-tags,.news-category-tabs,.financial-mode-tabs,.memo-chips,.occasion-tabs) button:not([aria-pressed=true]):not(.active),html[data-theme="light"] #schedulePanel .schedule-view-toggle button:not([aria-pressed=true]){background:#fff;color:#334155;border-color:#e2e8f0;box-shadow:none}
+html[data-theme="light"] :is(#categoryTabs,#categorySubFilters,.regulations-tags,.news-category-tabs,.financial-mode-tabs,.memo-chips,.occasion-tabs) button:not([aria-pressed=true]):not(.active):hover,html[data-theme="light"] #schedulePanel .schedule-view-toggle button:not([aria-pressed=true]):hover{background:#f1f5f9;color:#0f172a}
+html[data-theme="light"] :is(#categoryTabs,#categorySubFilters,.regulations-tags,.news-category-tabs,.financial-mode-tabs,.memo-chips,.occasion-tabs) button:is([aria-pressed=true],.active),html[data-theme="light"] #schedulePanel .schedule-view-toggle button[aria-pressed=true],html[data-theme="light"] .source-review-list button.active{background:#0f172a;border-color:#0f172a;color:#fff;box-shadow:0 1px 2px rgba(15,23,42,.1)}
+html[data-theme="light"] .filters,html[data-theme="light"] .financial-filters,html[data-theme="light"] :is(.card,.memo-card,.news-headline-card,.news-row,.steel-press-source,.financial-chart,.schedule-candidate,.source-review-panel,.regulations-card,.regulations-hit,.regulations-search-box,.regulations-workspace,.regulations-toolbar,.regulations-meta,.regulations-chapter){background:#fff;color:#0f172a;border-color:#e2e8f0;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+html[data-theme="light"] .category-section{background:#f1f5f9;border-color:#e2e8f0;box-shadow:none}
+html[data-theme="light"] .category-section>h3{background:#f1f5f9;color:#1e293b;border-color:#e2e8f0}
+html[data-theme="light"] .category-section .column-row{background:#fff;color:#0f172a;border:1px solid #e2e8f0;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+html[data-theme="light"] .category-section .column-row:hover{background:#f8fafc}
+html[data-theme="light"] #schedulePanel .schedule-control-bar,html[data-theme="light"] #schedulePanel .schedule-ddays,html[data-theme="light"] #schedulePanel .occasion-bar{background:#fff;border-color:#e2e8f0}
+html[data-theme="light"] #schedulePanel .schedule-view-toggle{background:#f1f5f9;border-color:#e2e8f0}
+html[data-theme="light"] .regulations-viewer,html[data-theme="light"] .regulations-document{background:#fff;color:#0f172a}
+html[data-theme="light"] .regulations-toc strong,html[data-theme="light"] .regulations-toc button,html[data-theme="light"] .regulations-toc button.toc-level-1,html[data-theme="light"] .reg-line.chapter{color:#1e293b}
+html[data-theme="light"] .regulations-toc button:hover{background:#f1f5f9;color:#172554}
+html[data-theme="light"] .regulations-toc button[aria-current="location"]{background:#eff6ff;color:#1e40af;font-weight:700}
+html[data-theme="light"] :is(.regulation-badge,.regulations-card .regulation-badge){background:#eff6ff;color:#1e3a8a}
+html[data-theme="light"] #regulationsPanel button:focus-visible{outline-color:#1e3a8a}
+html[data-theme="light"] #schedulePanel .schedule-dday-badge,html[data-theme="light"] #scheduleDDayDialog .schedule-dday-badge{background:#fffbeb;border-color:#fcd34d;color:#451a03;font-weight:600}
+html[data-theme="light"] #schedulePanel .schedule-dday-badge strong,html[data-theme="light"] #scheduleDDayDialog .schedule-dday-badge strong{background:#f59e0b;color:#fff}
+html[data-theme="light"] .schedule-dday-icon{color:#f59e0b}
+html[data-theme="light"] #schedulePanel .occasion-date{color:#b45309;font-weight:700}
+html[data-theme="light"] #schedulePanel .occasion-person strong{color:#0f172a;font-weight:700}
+html[data-theme="light"] #schedulePanel .occasion-reason{color:#475569}
+html[data-theme="light"] #scheduleMain .compact-calendar thead th.schedule-today{background:#172554;color:#fff}
+html[data-theme="light"] #scheduleMain .compact-calendar thead th.schedule-today small{color:#fff}
+html[data-theme="light"] #scheduleMain .schedule-today-badge{background:#f59e0b;color:#172554}
+html[data-theme="light"] #financialPanel .financial-chart svg [fill="#50d6b4"]{fill:#1e3a8a}
+html[data-theme="light"] #financialPanel .financial-chart svg [stroke="#50d6b4"]{stroke:#1e3a8a}
+html[data-theme="light"] #financialPanel .financial-chart svg [fill="#6aaeff"]{fill:#60a5fa}
+html[data-theme="light"] #financialPanel .financial-chart svg [stroke="#6aaeff"]{stroke:#60a5fa}
+html[data-theme="light"] #financialPanel .financial-chart svg [fill="#f1c466"]{fill:#f59e0b}
+html[data-theme="light"] #financialPanel .financial-chart svg [stroke="#f1c466"]{stroke:#f59e0b}
+html[data-theme="light"] #financialPanel .legend-revenue:before{background:#1e3a8a}
+html[data-theme="light"] #financialPanel .legend-operating:before{background:#60a5fa}
+html[data-theme="light"] #financialPanel .legend-margin:before{background:#f59e0b}
+html[data-theme="light"] .regulations-input-tabs button[aria-pressed=true],html[data-theme="light"] .schedule-result-controls button[aria-pressed=true],html[data-theme="light"] #adminMenuPanel .nav.active{background:#0f172a;color:#fff;border-color:#0f172a}
+html[data-theme="light"] .regulations-input-tabs button:not([aria-pressed=true]),html[data-theme="light"] .schedule-result-controls button:not([aria-pressed=true]){background:#fff;color:#334155;border-color:#e2e8f0}
+html[data-theme="light"] .admin-count:not([hidden]){background:#1e3a8a;color:#fff}
+html[data-theme="light"] body:not(.viewerrole) #scheduleMain td[data-calendar-empty=true]:hover{outline-color:#1e3a8a}
