@@ -644,9 +644,42 @@ html[data-theme="light"] body:not(.viewerrole) #scheduleMain td[data-calendar-em
 html[data-theme="dark"] #scheduleMain .schedule-table td.weekend:not(.schedule-today){background:#2a3752}
 html[data-theme="dark"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#3d5076}
 html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-today),html[data-theme="light"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#f1f5f9}
+/* 외부 조직의 말머리는 각 일정 카드의 왼쪽 위에 고정한다. */
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event-wrap .schedule-event{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left}
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event .schedule-actor{display:block;align-self:flex-start;text-align:left;margin:0 0 1px}
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event b{align-self:stretch;text-align:left}
 @media screen{
  #scheduleMain .schedule-table.compact-calendar,body.viewerrole #scheduleMain .schedule-table.compact-calendar,body:not(.viewerrole) #scheduleMain .schedule-table.compact-calendar{--calendar-org-width:48px;table-layout:fixed;width:100%;min-width:0;max-width:100%}
  #scheduleMain .schedule-table.compact-calendar th,#scheduleMain .schedule-table.compact-calendar td,body.viewerrole #scheduleMain .schedule-table.compact-calendar th,body.viewerrole #scheduleMain .schedule-table.compact-calendar td{width:auto;min-width:0;max-width:none}
  #scheduleMain .schedule-table.compact-calendar .schedule-org,body.viewerrole #scheduleMain .schedule-table.compact-calendar .schedule-org{width:48px;min-width:48px;max-width:48px;padding:3px 1px;text-align:center;white-space:normal;line-height:1.25;overflow:hidden}
  #scheduleMain .schedule-table.compact-calendar .schedule-org-col{width:48px}
+}
+
+/* 공통 정보 위계: 페이지 24, 섹션 18, 핵심 데이터 15~20, 본문 14, 보조 정보 12px. */
+@media screen{
+ :root{--type-page:24px;--type-section:18px;--type-key:16px;--type-body:14px;--type-meta:12px}
+ #schedulePanel .schedule-heading h1,#newsPanel .schedule-heading h1,#regulationsPanel .schedule-heading h1,#financialPanel .schedule-heading h1,#archiveContent .archive-page-heading h1{font-size:var(--type-page);font-weight:800;line-height:1.25}
+ #archiveContent .listhead h2,#archiveContent .category-section>h3,#newsPanel .news-headline-heading h2,#newsPanel .news-press-sidebar .news-headline-heading h2,#newsPanel .news-collected-heading,#newsPanel .steel-press-heading h3,#newsPanel .news-category-section>h2,#financialPanel .financial-chart h4,#financialPanel .financial-header-controls h3,#regulationsPanel .regulations-toolbar-v2>strong{font-size:var(--type-section);font-weight:700;line-height:1.3}
+ #financialPanel .financial-company-text h2{font-size:20px;font-weight:800;line-height:1.3}
+ #financialPanel .financial-summary-item strong{font-size:20px;font-weight:700;line-height:1.3}
+ #financialPanel .financial-matrix tbody th,#financialPanel .financial-matrix .financial-current>span{font-size:15px;font-weight:700}
+ #newsPanel .news-headline-title,#newsPanel .news-reader-columns .news-title,#newsPanel .steel-title{font-size:var(--type-key);font-weight:700;line-height:1.45}
+ #newsPanel .news-headline-title{display:block;overflow:visible;-webkit-line-clamp:unset}
+ #archiveContent .column-issuer,#archiveContent .reader-publication-card .column-issuer,#archiveContent .cardbody .card-publisher{font-size:var(--type-key);font-weight:700;line-height:1.35}
+ #schedulePanel .schedule-dday-badge,#schedulePanel .schedule-dday-badge strong{font-size:var(--type-key);font-weight:700}
+ #scheduleMain .compact-calendar .schedule-event b,#scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event b,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event b{font-size:15px;font-weight:700;line-height:1.2;letter-spacing:-.04em}
+ html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event b{font-weight:700}
+ #scheduleMain .schedule-today-badge{font-size:12px;font-weight:800;line-height:1.1;letter-spacing:-.08em}
+ html[data-theme="light"] #scheduleMain .schedule-today-badge{font-size:12px;font-weight:800}
+ #workspace main :is(.filters,.financial-filters,.regulations-global-search,.regulations-tags,#categoryTabs,#categorySubFilters,.news-category-tabs,.financial-mode-tabs,.schedule-controls) :is(input:not([type="checkbox"]),select,textarea,button,label),#workspace main :is(#regulationsSearch,#newsSearch,#search){font-size:var(--type-body);font-weight:400}
+ #workspace main :is(.regulations-tags,#categoryTabs,#categorySubFilters,.news-category-tabs,.financial-mode-tabs,.schedule-controls) button:is(.active,[aria-pressed="true"]){font-weight:700}
+ #financialPanel .financial-matrix td,#newsPanel .news-reader-columns .news-row p,#archiveContent .column-title,#archiveContent .reader-publication-card .column-title,#archiveContent .cardbody .card-title,#regulationsPanel .regulations-hit pre{font-size:var(--type-body);font-weight:400;line-height:1.5}
+ #regulationsPanel .regulations-hit strong,#regulationsPanel .reg-line.article{font-size:var(--type-key);font-weight:700}
+ #regulationsPanel .reg-line.chapter{font-size:var(--type-section);font-weight:700}
+ #regulationsPanel .regulations-toc button{font-size:var(--type-body)}
+ #archiveContent .archive-page-heading p,#archiveContent .column-date,#archiveContent .column-issue,#archiveContent .card-date,#newsPanel .news-meta,#newsPanel .news-meta small,#newsPanel .news-headline-bottom,#newsPanel .news-headline-heading small,#newsPanel .steel-press-source time,#newsPanel .news-headline-foot small,#financialPanel .financial-unit,#financialPanel .financial-chart-info,#financialPanel .financial-summary-note,#financialPanel .financial-summary-item small,#financialPanel .financial-profit-margin,#financialPanel .financial-source-row td,#schedulePanel .schedule-grid-hint,#scheduleMain .compact-calendar .schedule-event .calendar-range,#regulationsPanel .schedule-heading .hint{font-size:var(--type-meta);font-weight:400;line-height:1.35}
+ #scheduleMain .compact-calendar .schedule-event .calendar-range,#scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event .calendar-range,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event-meta .calendar-range{font-size:var(--type-meta);font-weight:400;opacity:.8;white-space:nowrap}
+ #financialPanel .financial-source-row td{font-size:var(--type-meta)!important}
+ html[data-theme="light"] #financialPanel .financial-company-text h2,html[data-theme="light"] #financialPanel .financial-summary-item strong:not(.financial-negative),html[data-theme="light"] #financialPanel .financial-matrix tbody th,html[data-theme="light"] #financialPanel .financial-matrix .financial-current:not(.financial-negative)>span,html[data-theme="light"] #newsPanel .news-headline-title,html[data-theme="light"] #newsPanel .news-reader-columns .news-title,html[data-theme="light"] #newsPanel .steel-title,html[data-theme="light"] #archiveContent .column-issuer,html[data-theme="light"] #archiveContent .cardbody .card-publisher,html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event b{color:#111827}
+ html[data-theme="light"] #archiveContent .archive-page-heading p,html[data-theme="light"] #archiveContent .column-date,html[data-theme="light"] #archiveContent .card-date,html[data-theme="light"] #newsPanel .news-meta,html[data-theme="light"] #newsPanel .news-headline-bottom,html[data-theme="light"] #newsPanel .steel-press-source time,html[data-theme="light"] #financialPanel .financial-unit,html[data-theme="light"] #financialPanel .financial-summary-item small,html[data-theme="light"] #financialPanel .financial-profit-margin,html[data-theme="light"] #schedulePanel .schedule-grid-hint{color:#6b7280}
 }
