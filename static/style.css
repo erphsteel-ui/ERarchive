@@ -151,3 +151,8 @@ body.viewerrole .schedule-event b{font-size:10px;line-height:1.35;display:-webki
  #schedulePrintSheet .schedule-event .calendar-range{display:inline-block;font-size:9px;line-height:1.1;letter-spacing:-.025em;opacity:.75;white-space:nowrap}
  #schedulePrintSheet .schedule-table .weekend{background:#f1f5f9!important}
 }
+@media print{
+ #schedulePrintSheet .schedule-table{--calendar-org-width:8.2mm}
+ #schedulePrintSheet .schedule-table .schedule-org-col{width:8.2mm}
+ #schedulePrintSheet .schedule-table .schedule-org{width:8.2mm;min-width:8.2mm;max-width:8.2mm;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
+}

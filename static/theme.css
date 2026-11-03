@@ -644,3 +644,9 @@ html[data-theme="light"] body:not(.viewerrole) #scheduleMain td[data-calendar-em
 html[data-theme="dark"] #scheduleMain .schedule-table td.weekend:not(.schedule-today){background:#2a3752}
 html[data-theme="dark"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#3d5076}
 html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-today),html[data-theme="light"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#f1f5f9}
+@media screen{
+ #scheduleMain .schedule-table.compact-calendar,body.viewerrole #scheduleMain .schedule-table.compact-calendar,body:not(.viewerrole) #scheduleMain .schedule-table.compact-calendar{--calendar-org-width:48px;table-layout:fixed;width:100%;min-width:0;max-width:100%}
+ #scheduleMain .schedule-table.compact-calendar th,#scheduleMain .schedule-table.compact-calendar td,body.viewerrole #scheduleMain .schedule-table.compact-calendar th,body.viewerrole #scheduleMain .schedule-table.compact-calendar td{width:auto;min-width:0;max-width:none}
+ #scheduleMain .schedule-table.compact-calendar .schedule-org,body.viewerrole #scheduleMain .schedule-table.compact-calendar .schedule-org{width:48px;min-width:48px;max-width:48px;padding:3px 1px;text-align:center;white-space:normal;line-height:1.25;overflow:hidden}
+ #scheduleMain .schedule-table.compact-calendar .schedule-org-col{width:48px}
+}
