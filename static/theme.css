@@ -653,3 +653,5 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
 /* 띄어쓰기 단위로 먼저 줄바꿈하고, 칸보다 긴 단어만 예외로 나눈다. */
 #scheduleMain .compact-calendar .schedule-event b,#scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event b,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event b{word-break:keep-all;overflow-wrap:break-word}
 #scheduleMain .compact-calendar thead th{vertical-align:middle}
+#scheduleMain .compact-calendar .schedule-event,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event-wrap .schedule-event{align-items:flex-start;justify-content:flex-start;text-align:left}
+#scheduleMain .compact-calendar .schedule-event b,#scheduleMain .compact-calendar .schedule-event .schedule-actor,#scheduleMain .compact-calendar .schedule-event-meta{text-align:left;align-self:flex-start}
