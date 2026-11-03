@@ -30,6 +30,7 @@ def install(a):
             id TEXT PRIMARY KEY,source TEXT REFERENCES schedule_sources(id),fingerprint TEXT UNIQUE,
             data TEXT,state TEXT,version INTEGER DEFAULT 1,created TEXT,updated TEXT);
         CREATE TABLE IF NOT EXISTS schedule_seen(id TEXT PRIMARY KEY,signature TEXT);
+        CREATE TABLE IF NOT EXISTS schedule_day_order(day TEXT NOT NULL,group_id TEXT NOT NULL,event_ids TEXT NOT NULL,PRIMARY KEY(day,group_id));
         CREATE TABLE IF NOT EXISTS schedule_reviews(source TEXT PRIMARY KEY REFERENCES schedule_sources(id) ON DELETE CASCADE,signature TEXT,updated TEXT);
         CREATE INDEX IF NOT EXISTS idx_schedule_events_state ON schedule_events(state);
         CREATE INDEX IF NOT EXISTS idx_schedule_events_source ON schedule_events(source);
@@ -195,7 +196,8 @@ def install(a):
             source_meta={r['id']:dict(r) for r in c.execute('SELECT id,name,kind FROM schedule_sources')}
             for e in all_events:
                 src=source_meta.get(e['source'],{});e['source_name']=src.get('name','');e['source_kind']=src.get('kind','')
-            result={'rows':rows(c),'events':visible,'month':month}
+            day_orders={r['day']+'|'+r['group_id']:json.loads(r['event_ids']) for r in c.execute('SELECT * FROM schedule_day_order WHERE day BETWEEN ? AND ?',(first.isoformat(),last.isoformat()))}
+            result={'rows':rows(c),'events':visible,'month':month,'day_orders':day_orders}
             if admin:
                 pending=[e for e in all_events if e['state']=='pending']
                 published=[e for e in all_events if e['state']=='published']
@@ -311,6 +313,33 @@ def install(a):
             used={json.loads(r[0]).get('row') for r in c.execute("SELECT data FROM schedule_events WHERE state IN ('pending','published')")}-{''}
             if not used.issubset(ids):return jsonify(error='일정이 있는 행은 삭제할 수 없습니다. 해당 일정을 다른 행으로 옮겨 주세요.'),400
             c.execute("UPDATE settings SET value=? WHERE key='schedule_rows'",(json.dumps(items,ensure_ascii=False),));a.log(c,'일정표 조직 행 변경')
+        return jsonify(ok=True)
+    @a.app.post('/api/schedule/day-order')
+    @a.protected(True)
+    def schedule_day_order():
+        b=request.get_json(silent=True)
+        if not isinstance(b,dict):abort(400)
+        day=b.get('date');group=b.get('group');items=b.get('ids');previous=b.get('previous')
+        if not isinstance(day,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or group not in ('common','pohang','dangjin','incheon','group','affiliate','labor','other'):abort(400)
+        try:dt.date.fromisoformat(day)
+        except ValueError:abort(400)
+        if not isinstance(items,list) or not 1<=len(items)<=500 or any(not isinstance(x,str) or len(x)>100 for x in items) or len(set(items))!=len(items):abort(400)
+        if not isinstance(previous,list) or len(previous)>500 or any(not isinstance(x,str) or len(x)>100 for x in previous):abort(400)
+        with a.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            stored=c.execute('SELECT event_ids FROM schedule_day_order WHERE day=? AND group_id=?',(day,group)).fetchone()
+            if (json.loads(stored['event_ids']) if stored else [])!=previous:abort(409)
+            def group_for(row):
+                if row['group']=='당사':return {'포항':'pohang','당진':'dangjin','인천':'incheon'}.get(row['name'],'common')
+                return {'그룹사':'group','계열사':'affiliate','노동계':'labor'}.get(row['group'],'other')
+            valid_rows={r['id'] for r in rows(c) if group_for(r)==group}
+            for eid in items:
+                row=c.execute("SELECT data FROM schedule_events WHERE id=? AND state='published'",(eid,)).fetchone()
+                if not row:abort(409)
+                event_data=json.loads(row['data'])
+                if event_data.get('row') not in valid_rows or not event_data.get('start','')<=day<=event_data.get('end',''):abort(409)
+            c.execute('INSERT INTO schedule_day_order(day,group_id,event_ids) VALUES(?,?,?) ON CONFLICT(day,group_id) DO UPDATE SET event_ids=excluded.event_ids',(day,group,json.dumps(items)))
+            a.log(c,'일정 표시 순서 변경',day+' '+group)
         return jsonify(ok=True)
     @a.app.post('/api/schedule/event')
     @a.protected()

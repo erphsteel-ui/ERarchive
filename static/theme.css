@@ -541,3 +541,39 @@ html[data-theme="light"] #schedulePanel .occasion-bar{background:#f8fafc;border-
 #schedulePanel .occasion-empty{color:#94a3b8;font-size:12px;white-space:nowrap}#schedulePanel .occasion-actions{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
 html[data-theme="light"] #schedulePanel .occasion-date{color:#92400e}html[data-theme="light"] #schedulePanel .occasion-person strong{color:#0f172a}html[data-theme="light"] #schedulePanel .occasion-reason{color:#334155}html[data-theme="light"] #schedulePanel .occasion-obituary{color:#be123c}html[data-theme="light"] #schedulePanel .occasion-empty{color:#64748b}
 @media(max-width:700px){#schedulePanel .occasion-bar{width:100%;overflow:hidden}#schedulePanel .occasion-columns{flex:1}}
+#calendarDayList .schedule-order-hint{margin:0;color:#94a3b8;font-size:12px}
+#calendarDayList .schedule-day-item{display:flex;align-items:stretch;gap:6px}
+#calendarDayList .schedule-day-event{flex:1;min-width:0}
+#calendarDayList .schedule-order-buttons{display:flex;align-items:center;gap:4px;flex:none}
+#calendarDayList .schedule-order-buttons button{padding:6px 10px;text-align:center}
+#calendarDayList .schedule-order-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px}
+#calendarDayList .schedule-order-footer [role=status]{color:#fca5a5;font-size:12px}
+html[data-theme="light"] #calendarDayList .schedule-order-hint{color:#475569}
+
+/* 라이트 모드 일정표: 배경과 유형별 포인트를 분리한다. */
+html[data-theme="light"] #scheduleMain .schedule-table th,html[data-theme="light"] #scheduleMain .schedule-table td{background:#fff;border-color:#e2e8f0;color:#1e293b}
+html[data-theme="light"] #scheduleMain .schedule-table .weekend,html[data-theme="light"] #scheduleMain .schedule-table thead .weekend{background:#f8fafc;color:#1e293b}
+html[data-theme="light"] #scheduleMain .schedule-table thead th,html[data-theme="light"] #scheduleMain .schedule-table .schedule-org{background:#f1f5f9;color:#1e293b;font-weight:600}
+html[data-theme="light"] #scheduleMain .schedule-table thead th.weekend{background:#f8fafc}
+html[data-theme="light"] #scheduleMain .compact-calendar td.schedule-today{background:rgba(239,246,255,.25);box-shadow:inset 1px 0 rgba(147,197,253,.6),inset -1px 0 rgba(147,197,253,.6)}
+html[data-theme="light"] #scheduleMain .compact-calendar thead th.schedule-today{background:#eff6ff;color:#1e3a8a;box-shadow:none}
+html[data-theme="light"] #scheduleMain .schedule-today-badge{display:block;background:#2563eb;color:#fff;border-radius:3px;padding:2px 3px;font-size:10px;font-weight:700}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event{border:1px solid var(--light-border);border-left:4px solid var(--light-accent);border-radius:2px;box-shadow:0 1px 2px rgba(15,23,42,.08);font-weight:500;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event b{font-weight:600}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event .calendar-range{color:inherit;opacity:.75}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-event:not(.schedule-muted){--light-border:#bfdbfe;--light-accent:#2563eb;background:rgba(219,234,254,.9);color:#172554!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-education:not(.schedule-muted){--light-border:#a7f3d0;--light-accent:#059669;background:rgba(209,250,229,.9);color:#022c22!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-meeting:not(.schedule-muted){--light-border:#ddd6fe;--light-accent:#7c3aed;background:rgba(237,233,254,.9);color:#2e1065!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-bargaining:not(.schedule-muted){--light-border:#fcd34d;--light-accent:#d97706;background:rgba(254,243,199,.95);color:#451a03!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-ceremony:not(.schedule-muted){--light-border:#a5f3fc;--light-accent:#0891b2;background:rgba(207,250,254,.9);color:#083344!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-rally:not(.schedule-muted){--light-border:#fda4af;--light-accent:#e11d48;background:rgba(255,228,230,.95);color:#4c0519!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-other:not(.schedule-muted){--light-border:#cbd5e1;--light-accent:#475569;background:rgba(226,232,240,.85);color:#0f172a!important}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-event:not(.schedule-muted):hover{background:rgba(191,219,254,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-education:not(.schedule-muted):hover{background:rgba(167,243,208,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-meeting:not(.schedule-muted):hover{background:rgba(221,214,254,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-bargaining:not(.schedule-muted):hover{background:rgba(253,230,138,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-ceremony:not(.schedule-muted):hover{background:rgba(165,243,252,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-rally:not(.schedule-muted):hover{background:rgba(254,205,211,.8)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-other:not(.schedule-muted):hover{background:rgba(203,213,225,.7)}
+html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-muted{--light-border:#cbd5e1;--light-accent:#64748b}
+html[data-theme="light"] #scheduleMain .schedule-table{-webkit-print-color-adjust:exact;print-color-adjust:exact}

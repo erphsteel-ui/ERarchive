@@ -21,7 +21,7 @@ async function showSchedule(review=false){
  const ticket=++scheduleRequest;
  syncReaderTabs(true);document.body.classList.add('schedule-open');scheduleReview=review&&user.role==='admin';scheduleActive=true;$('#archiveContent').hidden=true;$('#schedulePanel').hidden=false;$('#allNav').classList.remove('active');$('#scheduleNav').classList.toggle('active',!scheduleReview);$('#scheduleReviewNav').classList.toggle('active',scheduleReview);$('#schedulePrintSheet').replaceChildren();
  $('#schedulePanel').innerHTML='<p role="status">일정표를 불러오는 중…</p>';
- try{const result=await api('schedule?month='+encodeURIComponent(scheduleMonth));if(scheduleZoom){const end=scheduleAddDays(scheduleAnchorValue(),13);if(end.slice(0,7)!==scheduleMonth){const next=await api('schedule?month='+end.slice(0,7));const seen=new Set(result.events.map(e=>e.id));result.events.push(...next.events.filter(e=>!seen.has(e.id)))}}if(user.role==='admin'){const review=await api('schedule/review-sources');if(ticket!==scheduleRequest)return;scheduleSources=review.groups||review.sources;}if(scheduleActive&&ticket===scheduleRequest){scheduleData=result;renderSchedule()}}catch(e){if(ticket!==scheduleRequest)return;$('#schedulePanel').innerHTML='<p role="alert">'+esc(e.message)+'</p><button id="scheduleTry">다시 시도</button>';$('#scheduleTry').onclick=()=>showSchedule(review)}
+ try{const result=await api('schedule?month='+encodeURIComponent(scheduleMonth));if(scheduleZoom){const end=scheduleAddDays(scheduleAnchorValue(),13);if(end.slice(0,7)!==scheduleMonth){const next=await api('schedule?month='+end.slice(0,7));const seen=new Set(result.events.map(e=>e.id));result.events.push(...next.events.filter(e=>!seen.has(e.id)));Object.assign(result.day_orders||(result.day_orders={}),next.day_orders||{})}}if(user.role==='admin'){const review=await api('schedule/review-sources');if(ticket!==scheduleRequest)return;scheduleSources=review.groups||review.sources;}if(scheduleActive&&ticket===scheduleRequest){scheduleData=result;renderSchedule()}}catch(e){if(ticket!==scheduleRequest)return;$('#schedulePanel').innerHTML='<p role="alert">'+esc(e.message)+'</p><button id="scheduleTry">다시 시도</button>';$('#scheduleTry').onclick=()=>showSchedule(review)}
 }
 
 function renderSchedule(){
@@ -73,7 +73,8 @@ function calendarSelectOptions(selected){
 }
 function calendarDayEvents(group,date,firstDate=scheduleMonth+'-01'){
  const ids=new Set(group.rows.map(r=>r.id));
- return scheduleData.events.filter(e=>ids.has(e.row)&&e.end>=date&&(e.start===date||(date===firstDate&&e.start<date))).sort((a,b)=>a.start.localeCompare(b.start)||a.title.localeCompare(b.title,'ko')||a.id.localeCompare(b.id));
+ const order=scheduleData.day_orders?.[date+'|'+group.id]||[],ranks=new Map(order.map((id,i)=>[id,i]));
+ return scheduleData.events.filter(e=>ids.has(e.row)&&e.end>=date&&(e.start===date||(date===firstDate&&e.start<date))).sort((a,b)=>(ranks.get(a.id)??Infinity)-(ranks.get(b.id)??Infinity)||a.start.localeCompare(b.start)||a.title.localeCompare(b.title,'ko')||a.id.localeCompare(b.id));
 }
 const SCHEDULE_ACTORS=['현대제철내화','포항지부','민주노총','트랜시스','케피코','현대차','기아차','포스코','비지회','IMC','금속'];
 function scheduleActorGroup(group){return ['group','affiliate','labor','other'].includes(group?.id)}
@@ -117,7 +118,7 @@ function compactCalendarHTML(all=false){
 }
 function renderScheduleGrid(){
  if($('#scheduleHoverTip'))$('#scheduleHoverTip').hidden=true;
- $('#scheduleMain').innerHTML='<div class="schedule-grid-header"><p class="schedule-grid-hint">하루 최대 2개 표시 · +건수를 누르면 전체 일정 확인 · 기간 일정은 시작일에 종료일 표시 · 주말은 밝은 청보라색입니다.</p><div class="schedule-legend" aria-label="일정 유형 색상 범례">'+Object.entries(scheduleKindMap).map(([label,tone])=>'<span><i class="schedule-legend-dot schedule-tone-'+tone+'"></i>'+esc(label)+'</span>').join('')+'</div></div><div class="schedule-scroll '+(scheduleZoom?'schedule-zoom-scroll':'')+'" tabindex="0" aria-label="월간 일정표"><table class="schedule-table compact-calendar '+(scheduleZoom?'schedule-two-weeks':'')+'">'+compactCalendarHTML()+'</table></div>';
+ $('#scheduleMain').innerHTML='<div class="schedule-grid-header"><p class="schedule-grid-hint">하루 최대 2개 표시 · +건수를 누르면 전체 일정 확인 · 기간 일정은 시작일에 종료일 표시 · 주말은 배경색으로 구분합니다.</p><div class="schedule-legend" aria-label="일정 유형 색상 범례">'+Object.entries(scheduleKindMap).map(([label,tone])=>'<span><i class="schedule-legend-dot schedule-tone-'+tone+'"></i>'+esc(label)+'</span>').join('')+'</div></div><div class="schedule-scroll '+(scheduleZoom?'schedule-zoom-scroll':'')+'" tabindex="0" aria-label="월간 일정표"><table class="schedule-table compact-calendar '+(scheduleZoom?'schedule-two-weeks':'')+'">'+compactCalendarHTML()+'</table></div>';
  $$('[data-event]').forEach(b=>b.onclick=()=>openScheduleEvent(scheduleData.events.find(e=>e.id===b.dataset.event)));
  $$('[data-event-edit]').forEach(b=>b.onclick=e=>{e.stopPropagation();openScheduleEvent(scheduleData.events.find(item=>item.id===b.dataset.eventEdit))});
  $$('[data-event-cancel]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const item=scheduleData.events.find(x=>x.id===b.dataset.eventCancel);if(!item||!confirm('이 일정을 취소 상태로 변경할까요?'))return;b.disabled=true;try{await api('schedule/event',{...item,status:'취소',state:'published'});await showSchedule(false);toast('일정 상태를 취소로 변경했습니다.')}catch(err){toast(err.message);b.disabled=false}});
@@ -138,11 +139,16 @@ function openQuickSchedule(groupID,date){
  if(!d.open)d.showModal();if(form)form.elements.title.focus();
 }
 function openCalendarDay(groupID,date){
- const group=calendarGroups().find(g=>g.id===groupID),events=calendarDayEvents(group,date,scheduleVisibleDates()[0]);
+ const group=calendarGroups().find(g=>g.id===groupID);if(!group)return;const events=calendarDayEvents(group,date,scheduleVisibleDates()[0]);
  $('#calendarDayHeading').textContent=date+' · '+group.label;
- $('#calendarDayList').innerHTML=events.map(e=>`<button data-day-event="${esc(e.id)}"><b>${esc(calendarEventLabel(group,e))}</b><small>${esc(e.start)} ~ ${esc(e.end)} · ${esc(e.status)}</small></button>`).join('');
- $$('[data-day-event]').forEach(b=>b.onclick=()=>{ $('#calendarDayDialog').close();openScheduleEvent(scheduleData.events.find(e=>e.id===b.dataset.dayEvent))});
- $('#calendarDayDialog').showModal();
+ const list=$('#calendarDayList'),admin=user.role==='admin',previous=[...(scheduleData.day_orders?.[date+'|'+groupID]||[])];let changed=false;
+ function renderList(){
+  list.innerHTML=(admin?'<p class="schedule-order-hint">화살표로 순서를 바꾼 뒤 저장하세요. 위 두 일정이 달력에 먼저 표시됩니다.</p>':'')+events.map((e,i)=>`<div class="schedule-day-item"><button type="button" class="schedule-day-event" data-day-event="${esc(e.id)}"><b>${esc(calendarEventLabel(group,e))}</b><small>${esc(e.start)} ~ ${esc(e.end)} · ${esc(e.status)}</small></button>${admin?`<div class="schedule-order-buttons"><button type="button" data-move-index="${i}" data-move-direction="-1" aria-label="${esc(e.title)} 위로" ${i===0?'disabled':''}>↑</button><button type="button" data-move-index="${i}" data-move-direction="1" aria-label="${esc(e.title)} 아래로" ${i===events.length-1?'disabled':''}>↓</button></div>`:''}</div>`).join('')+(admin?`<div class="schedule-order-footer"><span role="status" id="scheduleOrderStatus"></span><button type="button" id="scheduleOrderSave" class="primary" ${changed?'':'disabled'}>순서 저장</button></div>`:'');
+  list.querySelectorAll('[data-day-event]').forEach(b=>b.onclick=()=>{$('#calendarDayDialog').close();openScheduleEvent(scheduleData.events.find(e=>e.id===b.dataset.dayEvent))});
+  list.querySelectorAll('[data-move-index]').forEach(b=>b.onclick=()=>{const from=Number(b.dataset.moveIndex),to=from+Number(b.dataset.moveDirection);if(to<0||to>=events.length)return;[events[from],events[to]]=[events[to],events[from]];changed=true;renderList();list.querySelector(`[data-move-index="${to}"][data-move-direction="${b.dataset.moveDirection}"]`)?.focus()});
+  const save=list.querySelector('#scheduleOrderSave');if(save)save.onclick=async()=>{save.disabled=true;try{await api('schedule/day-order',{date,group:groupID,ids:events.map(e=>e.id),previous});$('#calendarDayDialog').close();await showSchedule(false);toast('일정 표시 순서를 저장했습니다.')}catch(e){list.querySelector('#scheduleOrderStatus').textContent=e.message;save.disabled=false}};
+ }
+ renderList();if(!$('#calendarDayDialog').open)$('#calendarDayDialog').showModal();
 }
 function renderScheduleCandidates(){
  const info=scheduleData.info||{},pending=scheduleData.pending||[];

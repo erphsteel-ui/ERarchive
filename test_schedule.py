@@ -50,6 +50,18 @@ class ScheduleTests(unittest.TestCase):
   for kind in kinds:self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':kind},headers=headers).status_code,200,kind)
   self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':'임의'},headers=headers).status_code,403)
   self.assertCountEqual([item['kind'] for item in self.guest.get('/api/schedule?month=2026-10').json['events']],kinds)
+ def test_calendar_day_order_is_shared_scoped_and_admin_only(self):
+  with app.db() as c:c.execute('DELETE FROM schedule_day_order')
+  ids=[self.save(title=title,start='2026-11-05',end='2026-11-05').json['id'] for title in ('가','나','다')]
+  request={'date':'2026-11-05','group':'pohang','ids':[ids[2],ids[0],ids[1]],'previous':[]}
+  self.assertEqual(self.guest.post('/api/schedule/day-order',json=request).status_code,401)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'group':'dangjin'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'date':'2026-11-06'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-11').json['day_orders']['2026-11-05|pohang'],request['ids'])
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'previous':request['ids'],'ids':ids},headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-10').json['day_orders'],{})
  def test_dday_permissions_filter_and_preservation(self):
   with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
   member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}

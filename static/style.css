@@ -125,3 +125,19 @@ body.viewerrole .schedule-event b{font-size:10px;line-height:1.35;display:-webki
 
 @page{size:A3 landscape;margin:10mm}
 @media print{html,body,body.schedule-print-ready>#schedulePrintSheet{background:#fff!important;color:#111!important}#schedulePrintSheet .schedule-table{border-color:#ccc!important}#schedulePrintSheet .schedule-table th,#schedulePrintSheet .schedule-table td{background:#fff!important;color:#111!important;border-color:#ccc!important}#schedulePrintSheet .schedule-table .weekend{background:#f3f4f6!important}#schedulePrintSheet .schedule-today-badge{display:none}#schedulePrintSheet .schedule-event{color:#111!important;border:1px solid #7ca591!important;background:#e8f4ec!important}#schedulePrintSheet .schedule-event.schedule-tone-labor{background:#fce8e6!important;border-color:#c97e78!important}#schedulePrintSheet .schedule-event.schedule-tone-meeting{background:#e5efff!important;border-color:#7c9fc8!important}#schedulePrintSheet .schedule-event.schedule-muted{background:#eee!important;border-color:#999!important}}
+
+/* theme.css is screen-only, so print colors must live in this stylesheet. */
+@media print{
+ #schedulePrintSheet .schedule-table,#schedulePrintSheet .schedule-event{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ #schedulePrintSheet .schedule-table th,#schedulePrintSheet .schedule-table td{border-color:#e2e8f0!important}
+ #schedulePrintSheet .schedule-table .weekend{background:#f8fafc!important}
+ #schedulePrintSheet .schedule-table .schedule-org{background:#f1f5f9!important;color:#1e293b!important}
+ #schedulePrintSheet .schedule-event:not(.schedule-muted){border:1px solid var(--print-border)!important;border-left:4px solid var(--print-accent)!important;border-radius:2px;box-shadow:0 1px 2px rgba(15,23,42,.08);background:var(--print-bg)!important;color:var(--print-text)!important}
+ #schedulePrintSheet .schedule-tone-event{--print-bg:#dbeafe;--print-border:#bfdbfe;--print-accent:#2563eb;--print-text:#172554}
+ #schedulePrintSheet .schedule-tone-education{--print-bg:#d1fae5;--print-border:#a7f3d0;--print-accent:#059669;--print-text:#022c22}
+ #schedulePrintSheet .schedule-tone-meeting{--print-bg:#ede9fe;--print-border:#ddd6fe;--print-accent:#7c3aed;--print-text:#2e1065}
+ #schedulePrintSheet .schedule-tone-bargaining{--print-bg:#fef3c7;--print-border:#fcd34d;--print-accent:#d97706;--print-text:#451a03}
+ #schedulePrintSheet .schedule-tone-ceremony{--print-bg:#cffafe;--print-border:#a5f3fc;--print-accent:#0891b2;--print-text:#083344}
+ #schedulePrintSheet .schedule-tone-rally{--print-bg:#ffe4e6;--print-border:#fda4af;--print-accent:#e11d48;--print-text:#4c0519}
+ #schedulePrintSheet .schedule-tone-other{--print-bg:#e2e8f0;--print-border:#cbd5e1;--print-accent:#475569;--print-text:#0f172a}
+}
