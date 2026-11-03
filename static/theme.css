@@ -628,3 +628,19 @@ html[data-theme="light"] .regulations-input-tabs button[aria-pressed=true],html[
 html[data-theme="light"] .regulations-input-tabs button:not([aria-pressed=true]),html[data-theme="light"] .schedule-result-controls button:not([aria-pressed=true]){background:#fff;color:#334155;border-color:#e2e8f0}
 html[data-theme="light"] .admin-count:not([hidden]){background:#1e3a8a;color:#fff}
 html[data-theme="light"] body:not(.viewerrole) #scheduleMain td[data-calendar-empty=true]:hover{outline-color:#1e3a8a}
+
+/* 월간 일정의 날짜 열과 말머리를 읽기 좋게 압축한다. */
+@media screen{
+ #scheduleMain .schedule-scroll,body.viewerrole #scheduleMain .schedule-scroll{overflow:auto}
+ #scheduleMain .compact-calendar:not(.schedule-two-weeks),body.viewerrole #scheduleMain .compact-calendar:not(.schedule-two-weeks),body:not(.viewerrole) #scheduleMain .compact-calendar:not(.schedule-two-weeks){width:100%;min-width:1950px;table-layout:fixed}
+ #scheduleMain .compact-calendar .schedule-org,body.viewerrole #scheduleMain .compact-calendar .schedule-org{width:96px;min-width:96px;max-width:96px;padding:4px 2px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #scheduleMain .compact-calendar:not(.schedule-two-weeks) td{padding:0 1px}
+ #scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event,html[data-theme="light"] #scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event{padding:2px;border-left-width:2px;gap:0}
+ #scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event b{font-size:10.5px;line-height:1.2;letter-spacing:-.06em;word-break:normal;overflow-wrap:anywhere;max-height:none}
+ #scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event .calendar-range{font-size:9.5px;line-height:1.1;letter-spacing:-.025em;opacity:.75;white-space:nowrap}
+ #scheduleMain .compact-calendar .schedule-event .schedule-actor,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event .schedule-actor{display:block;align-self:flex-start;max-width:100%;padding:0;margin:0 0 1px;font-size:9.5px;font-weight:700;line-height:1.1;letter-spacing:-.06em;opacity:.85;white-space:nowrap;word-break:normal;overflow:hidden;text-overflow:ellipsis}
+}
+/* 주말은 기존 테마의 색조를 유지하며 한 단계 진하게 표시한다. */
+html[data-theme="dark"] #scheduleMain .schedule-table td.weekend:not(.schedule-today){background:#2a3752}
+html[data-theme="dark"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#3d5076}
+html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-today),html[data-theme="light"] #scheduleMain .schedule-table thead th.weekend:not(.schedule-today){background:#f1f5f9}

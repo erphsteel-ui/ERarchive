@@ -79,8 +79,8 @@ function calendarDayEvents(group,date,firstDate=scheduleMonth+'-01'){
 const SCHEDULE_ACTORS=['현대제철내화','포항지부','민주노총','트랜시스','케피코','현대차','기아차','포스코','비지회','IMC','금속'];
 function scheduleActorGroup(group){return ['group','affiliate','labor','other'].includes(group?.id)}
 function scheduleSplitTitle(group,title){
- const original=String(title||'');if(!scheduleActorGroup(group))return {actor:'',title:original};
- const comma=original.indexOf(',');if(comma>0){const actor=original.slice(0,comma).trim(),rest=original.slice(comma+1).trim();if(actor&&rest)return {actor,title:rest}}
+ const original=String(title||''),bracketed=original.match(/^\s*\[([^\]\r\n]+)\]\s*(.*)$/s);if(bracketed)return {actor:bracketed[1].trim(),title:bracketed[2].trim()};if(!scheduleActorGroup(group))return {actor:'',title:original};
+ const comma=original.indexOf(',');if(comma>0){const actor=original.slice(0,comma).trim().replace(/^\[([^\]]+)\]$/,'$1'),rest=original.slice(comma+1).trim();if(actor&&rest)return {actor,title:rest}}
  const trimmed=original.trim(),actor=SCHEDULE_ACTORS.find(name=>trimmed.startsWith(name));if(actor){const rest=trimmed.slice(actor.length).replace(/^[\s,·:：-]+/,'').trim();if(rest)return {actor,title:rest}}
  return {actor:'',title:original};
 }
@@ -101,8 +101,8 @@ function scheduleVisibleDates(all=false){
 }
 function scheduleCardHTML(group,e,all=false){
  const split=scheduleSplitTitle(group,e.title),range=calendarRangeLabel(e),time=e.time||'',result=e.result||'';
- const meta=[split.actor?`<span class="schedule-actor">[${esc(split.actor)}]</span>`:'',range?`<small class="calendar-range">${esc(range)}</small>`:'',time?`<small class="schedule-time">${esc(time)}</small>`:'',result?`<small class="schedule-result-tag">${esc(result)}</small>`:''].filter(Boolean).join('');
- return `<div class="schedule-event-wrap"><button class="schedule-event schedule-tone-${scheduleTone(e)} ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}"><b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(split.title)}</b>${meta?`<span class="schedule-event-meta">${meta}</span>`:''}</button>${!all&&user.role==='admin'?`<span class="schedule-event-actions"><button type="button" data-event-edit="${esc(e.id)}">수정</button><button type="button" data-event-cancel="${esc(e.id)}">취소</button></span>`:''}</div>`;
+ const meta=[range?`<small class="calendar-range">${esc(range)}</small>`:'',time?`<small class="schedule-time">${esc(time)}</small>`:'',result?`<small class="schedule-result-tag">${esc(result)}</small>`:''].filter(Boolean).join('');
+ return `<div class="schedule-event-wrap"><button class="schedule-event schedule-tone-${scheduleTone(e)} ${['취소','보류'].includes(e.status)?'schedule-muted':''}" data-event="${esc(e.id)}">${split.actor?`<span class="schedule-actor" title="${esc(split.actor)}">[${esc(split.actor)}]</span>`:''}<b>${['취소','보류'].includes(e.status)?'['+esc(e.status)+'] ':''}${esc(split.title)}</b>${meta?`<span class="schedule-event-meta">${meta}</span>`:''}</button>${!all&&user.role==='admin'?`<span class="schedule-event-actions"><button type="button" data-event-edit="${esc(e.id)}">수정</button><button type="button" data-event-cancel="${esc(e.id)}">취소</button></span>`:''}</div>`;
 }
 function compactCalendarHTML(all=false){
  const dates=scheduleVisibleDates(all),today=scheduleTodayISO(),firstDate=dates[0];let html='<thead><tr><th class="schedule-org">구분 / 조직·사업장</th>';
@@ -229,7 +229,7 @@ function prepareSchedulePrint(){
  const heading=document.createElement('h1');heading.textContent=(scheduleData.month||scheduleMonth).replace('-','년 ')+'월 노사 주요 일정';sheet.append(heading);
  const table=$('#schedulePanel .schedule-table').cloneNode(true);table.innerHTML=compactCalendarHTML(true);table.classList.remove('compact-calendar');
  table.querySelectorAll('.schedule-empty').forEach(el=>el.remove());
- table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;span.textContent=el.textContent;el.replaceWith(span)});
+ table.querySelectorAll('.schedule-event').forEach(el=>{const span=document.createElement('div');span.className=el.className;while(el.firstChild)span.append(el.firstChild);el.replaceWith(span)});
  sheet.append(table);
 }
 window.addEventListener('beforeprint',prepareSchedulePrint);
