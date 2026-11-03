@@ -1,6 +1,6 @@
 from ocr_engine import recognize_body
 import tempfile
-import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time
+import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time, ipaddress
 from pathlib import Path
 from functools import wraps
 from flask import Flask, request, session, jsonify, send_file, render_template, abort
@@ -61,6 +61,57 @@ def protected(admin=False):
             return fn(*a,**kw)
         return wrap
     return dec
+def normalized_client_ip(value):
+    try:
+        address=ipaddress.ip_address(value or '')
+        if isinstance(address,ipaddress.IPv6Address) and address.ipv4_mapped:address=address.ipv4_mapped
+        return address
+    except ValueError:return None
+
+def viewer_ip_allowed(c,client):
+    if client is None:return False
+    if client.is_loopback:return True
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+    try:allowed=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):return False
+    return isinstance(allowed,list) and str(client) in allowed
+
+@app.before_request
+def restrict_viewer_api():
+    # Use the connection peer, never untrusted forwarding headers.
+    if not request.path.startswith('/api/') or request.path in ('/api/login','/api/logout'):return
+    client=normalized_client_ip(request.remote_addr)
+    with db() as c:
+        user=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
+        if user and user['role']=='admin':return
+        if viewer_ip_allowed(c,client):return
+    return jsonify(error='이 PC는 일반 열람 허용 IP에 등록되어 있지 않습니다. 관리자에게 문의하세요.'),403
+
+@app.get('/api/viewer-ips')
+@protected(True)
+def get_viewer_ips():
+    with db() as c:row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+    try:addresses=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):addresses=[]
+    return jsonify(addresses=addresses,client_ip=str(normalized_client_ip(request.remote_addr) or ''))
+
+@app.post('/api/viewer-ips')
+@protected(True)
+def save_viewer_ips():
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict) or not isinstance(b.get('addresses'),list) or len(b['addresses'])>256:abort(400)
+    addresses=[]
+    for item in b['addresses']:
+        if not isinstance(item,str) or len(item)>45:abort(400)
+        address=normalized_client_ip(item.strip())
+        if address is None or address.is_unspecified or address.is_multicast:return jsonify(error='올바른 개별 IP 주소를 한 줄에 하나씩 입력하세요.'),400
+        value=str(address)
+        if value not in addresses:addresses.append(value)
+    with db() as c:
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_allowlist',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(addresses),))
+        log(c,'일반 열람 허용 IP 변경',str(len(addresses))+'개')
+    return jsonify(ok=True,count=len(addresses))
+
 @app.after_request
 def headers(r):
     r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='DENY'
@@ -492,6 +543,10 @@ import memos
 memos.install(sys.modules[__name__])
 import regulations
 regulations.install(sys.modules[__name__])
+import occasions
+occasions.install(sys.modules[__name__])
+import training_export
+training_export.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import

@@ -1,39 +1,130 @@
 'use strict';
-let regulationsActive=false,regulationsTicket=0,regulationsSearch='',regulationsFilter='',regulationsItems=[];
-const regulationsCategories=[['labor_act','근로기준법'],['union_act','노동조합법'],['work_technical','기술직 취업규칙'],['agreement','단체협약'],['work_general','일반직 취업규칙'],['pohang_rules','포항지회 규칙'],['pohang_bylaws','포항지회 세칙']];
+let regulationsActive=false,regulationsTicket=0,regulationsSearch='',regulationsFilter='',regulationsDocs=[],regulationsMatches=[];
+const regulationsCategories=[['union_act','노동조합법'],['labor_act','근로기준법'],['work_technical','기술직 취업규칙'],['work_general','일반직 취업규칙'],['agreement','단체협약'],['pohang_rules','노동조합 규칙'],['pohang_bylaws','노동조합 세칙']];
+const regLabel=key=>regulationsCategories.find(x=>x[0]===key)?.[1]||key;
+const regLines=text=>text.split(/\r\n|\r|\n/);
+const regHeading=line=>/^\s*(?:제\s*\d+\s*(?:장|절)|\d+\)\s*.*세칙)/.test(line)?'chapter':/^\s*(?:제\s*\d+\s*조(?:\s*의\s*\d+)?(?:\s|[([【]|$)|\d+\.\d+\.\d+(?:\s|$)|[■▣])/.test(line)?'article':'';
+// Extract only the heading label, never the text that follows an article title.
+function regTocEntry(line,category){
+ const chapter=line.match(/^\s*(제\s*\d+\s*(?:장|절)(?:\s*의\s*\d+)?\s*[^\n]*?)(?=\s*(?:제\s*\d+\s*조(?:\s*의\s*\d+)?\s*[([【]|[①②③④⑤⑥⑦⑧⑨⑩])|$)/);
+ if(chapter)return {type:'chapter',level:1,label:chapter[1].trim()};
+ const article=line.match(/^\s*(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:\([^)]*\)|\[[^\]]*\]|【[^】]*】))/);
+ if(article)return {type:'article',level:2,label:article[1].trim()};
+ // Numeric headings are restricted to work-rule documents when a category is known.
+ const text=line.trim(),workRules=!category||category==='work_general'||category==='work_technical';
+ if(workRules){
+  const length=[...text].length;
+  if(length<=40&&/^\d+\.\d+\.\d+\s+\S/.test(text))return {type:'article',level:3,label:text};
+  if(length<=40&&/^\d+\.\d+\s+\S/.test(text))return {type:'article',level:2,label:text};
+  if(length<=25&&/^\d+\.\s+\S/.test(text)&&!/다\.$/.test(text)&&!/["“”]/.test(text))return {type:'chapter',level:1,label:text};
+ }
+ const bylaws=line.match(/^\s*(\d+\)\s*[^\n]{0,80}?세칙)(?:\s*$|\s*[①②③④⑤⑥⑦⑧⑨⑩])/);
+ if(bylaws)return {type:'chapter',level:1,label:bylaws[1].trim()};
+ return null;
+}
+const regRegex=q=>new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
+function regHighlight(text,q){if(!q)return esc(text);const regex=regRegex(q);let html='',last=0,m;while((m=regex.exec(text))){html+=esc(text.slice(last,m.index))+'<mark>'+esc(m[0])+'</mark>';last=m.index+m[0].length}return html+esc(text.slice(last))}
 function closeRegulations(){regulationsActive=false;regulationsTicket++;$('#regulationsPanel').hidden=true;$('#readerRegulationsTab').classList.remove('active');$('#readerRegulationsTab').setAttribute('aria-pressed','false');document.body.classList.remove('regulations-open')}
 $('#readerRegulationsTab').onclick=showRegulations;
-async function showRegulations(){if($('#readerRegulationsTab').disabled||user?.role!=='admin')return;scheduleExit();regulationsActive=true;document.body.classList.add('regulations-open');$('#archiveContent').hidden=true;$('#regulationsPanel').hidden=false;$('#readerArchiveTab').classList.remove('active');$('#readerArchiveTab').setAttribute('aria-pressed','false');$('#readerRegulationsTab').classList.add('active');$('#readerRegulationsTab').setAttribute('aria-pressed','true');renderRegulations();await loadRegulations()}
-function regulationHighlight(value,query){
- const text=String(value||''),q=query.trim();if(!q)return esc(text);
- const number=q.replace(/\s+/g,'').match(/^(?:제)?(\d+)조(?:의(\d+))?$/);
- let pattern;if(number)pattern='(?:제\\s*)?'+number[1]+'\\s*조'+(number[2]?'\\s*의\\s*'+number[2]:'');else pattern=[...q.replace(/\s+/g,'')].map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*');
- if(!pattern)return esc(text);const regex=new RegExp('('+pattern+')','gi');return text.split(regex).map((part,i)=>i%2?'<mark>'+esc(part)+'</mark>':esc(part)).join('');
-}
+async function showRegulations(){if($('#readerRegulationsTab').disabled)return;scheduleExit();regulationsActive=true;document.body.classList.add('regulations-open');$('#archiveContent').hidden=true;$('#regulationsPanel').hidden=false;$('#readerArchiveTab').classList.remove('active');$('#readerArchiveTab').setAttribute('aria-pressed','false');$('#readerRegulationsTab').classList.add('active');$('#readerRegulationsTab').setAttribute('aria-pressed','true');renderRegulations();await loadRegulations()}
 function renderRegulations(){
- $('#regulationsPanel').innerHTML=`<div class="schedule-heading"><div><h1>법령·규정</h1><p class="hint">등록된 원문을 조문별로 통합 검색합니다.</p></div>${user.role==='admin'?'<button type="button" id="regulationsEdit" class="primary">＋ 원문 등록</button>':''}</div><div class="regulations-global-search"><label for="regulationsSearch">통합 조문 검색</label><div class="regulations-search-box"><span aria-hidden="true">🔍</span><input id="regulationsSearch" type="search" maxlength="200" placeholder="노동법, 취업규칙, 단협 전체 조문 검색 (예: 연차, 휴가, 징계)" value="${esc(regulationsSearch)}"></div></div><div id="regulationsTags" class="regulations-tags" aria-label="문서 종류 필터"></div><div id="regulationsResults"></div>`;
- let timer;$('#regulationsSearch').oninput=e=>{regulationsSearch=e.target.value;regulationsTicket++;clearTimeout(timer);timer=setTimeout(loadRegulations,120)};$('#regulationsEdit')?.addEventListener('click',openRegulationsEditor);
+ $('#regulationsPanel').innerHTML=`<div class="schedule-heading"><div><h1>법령·규정 검색</h1><p class="hint">원문 전체를 검색하고 열람합니다.</p></div>${user.role==='admin'?'<button type="button" id="regulationsEdit" class="primary">+ 규정 등록/관리</button>':''}</div><div class="regulations-global-search"><label for="regulationsSearch">통합 원문 검색</label><div class="regulations-search-box"><span aria-hidden="true">🔍</span><input id="regulationsSearch" type="search" maxlength="200" placeholder="조항명, 키워드, 본문 내용 검색 (예: 근로시간, 연장근로, 휴일)" value="${esc(regulationsSearch)}"></div></div><div id="regulationsTags" class="regulations-tags" aria-label="규정 필터"></div><div id="regulationsResults" aria-live="polite"></div>`;
+ let timer;$('#regulationsSearch').oninput=e=>{regulationsSearch=e.target.value;clearTimeout(timer);timer=setTimeout(renderRegulationResults,120)};$('#regulationsEdit')?.addEventListener('click',openRegulationsEditor);
 }
-async function loadRegulations(){
- const ticket=++regulationsTicket,q=regulationsSearch.trim(),filter=regulationsFilter,panel=$('#regulationsResults');
- try{const result=await api('regulations/archive?'+new URLSearchParams({q,category:filter}));if(!regulationsActive||ticket!==regulationsTicket||panel!==$('#regulationsResults'))return;
-  regulationsItems=result.items;$('#regulationsTags').innerHTML=[['','전체'],...regulationsCategories].map(([key,label])=>`<button type="button" data-regulation-filter="${key}" aria-pressed="${key===filter}">${label} (${key?result.counts[key]:result.total})</button>`).join('');
-  $('#regulationsTags').querySelectorAll('[data-regulation-filter]').forEach(button=>button.onclick=()=>{regulationsFilter=button.dataset.regulationFilter;loadRegulations()});
-  const selected=regulationsCategories.find(([key])=>key===filter)?.[1]||'전체';
-  panel.innerHTML=`<p class="regulations-result-count">${esc(selected)} · ${q?'검색어: '+esc(q):'전체 원문'} · ${result.items.length}건</p><div class="regulations-cards">${result.items.map((item,i)=>`<article class="regulations-card"><div class="regulations-card-top"><span class="regulation-badge regulation-badge-${esc(item.category)}">${esc(item.category_name)}</span>${item.needs_review?'<strong class="regulations-sample-badge">확인 필요</strong>':''}<span class="regulations-card-meta">최종 저장 ${esc(item.updated||'시각 미상')}</span></div><h3>${regulationHighlight(item.title||'제목 없는 원문',q)}</h3>${item.chapter||item.section?`<small class="regulations-card-chapter">${esc([item.chapter,item.section].filter(Boolean).join(' · '))}</small>`:''}<pre class="regulations-preview">${regulationHighlight(item.preview,q)}</pre><button type="button" data-regulation-open="${i}">전체보기</button></article>`).join('')||`<p class="regulations-empty">${esc(selected)}에서 ${q?'‘'+esc(q)+'’ 검색 결과가 없습니다.':'등록된 원문이 없습니다.'} 검색어나 문서 종류를 확인해 주세요.</p>`}</div>`;
-  panel.querySelectorAll('[data-regulation-open]').forEach(button=>button.onclick=()=>openRegulationArticle(regulationsItems[Number(button.dataset.regulationOpen)]));
- }catch(error){if(regulationsActive&&ticket===regulationsTicket)panel.innerHTML=`<p role="alert">조회하지 못했습니다: ${esc(error.message)}</p><button id="regulationsRetry">다시 시도</button>`;$('#regulationsRetry')?.addEventListener('click',loadRegulations)}
+async function loadRegulations(){const ticket=++regulationsTicket;try{const data=await api('regulations/fulltexts');if(!regulationsActive||ticket!==regulationsTicket)return;regulationsDocs=data.documents;renderRegulationResults()}catch(e){if(regulationsActive&&ticket===regulationsTicket)$('#regulationsResults').innerHTML=`<p role="alert">조회하지 못했습니다: ${esc(e.message)}</p>`}}
+// Identify a leading contents list only when an empty heading repeats with real body text.
+function regTocRange(lines){
+ const marker=lines.findIndex((x,i)=>i<200&&/^\s*목\s*차\s*$/.test(x));
+ const keyFor=line=>{const m=line.match(/^\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[([【][^\)\]】]*[)\]】]\s*$/);return m?m[1]+':'+(m[2]||''):null};
+ const first=new Map();
+ for(let i=Math.max(0,marker+1);i<lines.length;i++){
+  const key=keyFor(lines[i]);if(!key)continue;
+  let next=i+1;while(next<lines.length&&!lines[next].trim())next++;
+  const hasBody=next<lines.length&&!regHeading(lines[next])&&!/^\s*(?:부\s*칙|목\s*차)\b/.test(lines[next]);
+  if(!first.has(key)){if(!hasBody)first.set(key,i);continue}
+  if(hasBody){const firstIndex=first.get(key);let start=marker>=0?marker:firstIndex;
+   if(marker<0){while(start>0&&(!lines[start-1].trim()||regHeading(lines[start-1])))start--}
+   let end=i;while(end>firstIndex+1&&(!lines[end-1].trim()||regHeading(lines[end-1])==='chapter'))end--;
+   return {start,end};}
+ }
+ return null;
 }
-function openRegulationArticle(item){if(!item)return;let dialog=$('#regulationArticleDialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='regulationArticleDialog';document.body.append(dialog)}dialog.innerHTML=`<div class="modalhead"><h2>${esc(item.title||'원문')}</h2><button type="button" id="regulationArticleClose">닫기</button></div><p class="hint">${esc(item.category_name)} · 최종 저장 ${esc(item.updated||'시각 미상')}</p><pre class="regulations-full">${regulationHighlight(item.body,regulationsSearch.trim())}</pre>`;$('#regulationArticleClose').onclick=()=>dialog.close();dialog.showModal()}
+function regSnippet(line,index,length){
+ const start=Math.max(0,index-60),end=Math.min(line.length,index+length+60);
+ return (start?'…':'')+line.slice(start,end)+(end<line.length?'…':'');
+}
+function regFind(docs,q){
+ const results=[];if(!q)return results;
+ for(const doc of docs){
+  const lines=regLines(doc.body),toc=regTocRange(lines);let group=null,heading='원문';
+  lines.forEach((line,i)=>{
+   if(toc&&i>=toc.start&&i<toc.end)return;
+   const kind=regHeading(line);
+   if(kind==='article'){heading=line.trim();group=null}
+   else if(kind==='chapter'){heading=line.trim();group=null}
+   const regex=regRegex(q);let match;
+   while((match=regex.exec(line))){
+    if(!group){group={category:doc.category,line:i,heading,snippet:regSnippet(line,match.index,match[0].length),count:0};results.push(group)}
+    group.count++;
+   }
+  });
+ }
+ return results;
+}
+let regCompare=false,regCompareCategory='',regFontSize=14;
+function renderRegulationResults(){
+ const q=regulationsSearch.trim();regulationsMatches=regFind(regulationsDocs,q);const counts=Object.fromEntries(regulationsCategories.map(([k])=>[k,q?regulationsMatches.filter(x=>x.category===k).length:regulationsDocs.filter(x=>x.category===k).length]));
+ $('#regulationsTags').innerHTML=[['','전체'],...regulationsCategories].map(([k,label])=>`<button type="button" data-regulation-filter="${k}" aria-pressed="${k===regulationsFilter}">${esc(label)} (${k?counts[k]:Object.values(counts).reduce((a,b)=>a+b,0)})</button>`).join('');
+ $('#regulationsTags').querySelectorAll('[data-regulation-filter]').forEach(b=>b.onclick=()=>{regulationsFilter=b.dataset.regulationFilter;renderRegulationResults()});
+ const panel=$('#regulationsResults');
+ if(!q){let doc=regulationsDocs.find(d=>d.category===regulationsFilter);if(!regulationsFilter){panel.innerHTML='<p class="hint">카테고리를 선택하면 규정 전문을 볼 수 있습니다.</p>';return}if(!doc){panel.innerHTML='<p class="regulations-empty">등록된 원문이 없습니다.</p>';return}panel.innerHTML='<div id="regulationsViewer"></div>';renderRegViewer($('#regulationsViewer'),doc,'');return}
+ const visible=regulationsMatches.map((m,i)=>({m,i})).filter(x=>!regulationsFilter||x.m.category===regulationsFilter);
+ panel.innerHTML=`<p class="regulations-result-count">검색 결과 ${visible.length}건</p><div class="regulations-split"><div class="regulations-result-list">${visible.map(({m,i})=>`<button class="regulations-hit" type="button" data-hit="${i}"><span class="regulation-badge">${esc(regLabel(m.category))}</span><strong>${esc(m.heading)} <small class="reg-match-count">${m.count}건</small></strong><pre>${regHighlight(m.snippet,q)}</pre></button>`).join('')||'<p class="regulations-empty">검색 결과가 없습니다.</p>'}</div><div id="regulationsViewer"><p class="hint">검색 결과를 선택하면 원문 위치로 이동합니다.</p></div></div>`;
+ panel.querySelectorAll('[data-hit]').forEach(button=>button.onclick=()=>{const hit=regulationsMatches[Number(button.dataset.hit)],doc=regulationsDocs.find(d=>d.category===hit.category);if(doc)renderRegViewer($('#regulationsViewer'),doc,q,hit.line)})
+}
+function regCopyText(lines,index){
+ let start=index;while(start>0&&regHeading(lines[start])!=='article'&&!regHeading(lines[start]))start--;
+ if(regHeading(lines[start])!=='article')return lines[index];
+ let end=start+1;while(end<lines.length&&!regHeading(lines[end]))end++;
+ return lines.slice(start,end).join('\n');
+}
+function renderRegViewer(container,doc,q,lineNumber){
+ const alternatives=regulationsDocs.filter(d=>d.category!==doc.category);
+ if(!alternatives.some(d=>d.category===regCompareCategory))regCompareCategory=alternatives[0]?.category||'';
+ container.innerHTML=`<div class="regulations-workspace"><div class="regulations-toolbar-v2"><strong>${esc(regLabel(doc.category))}</strong>${doc.source?`<span class="hint">법제처 · 시행 ${esc(doc.source.effective_date||'미상')} · 조회 ${esc(doc.imported_at||'미상')}</span>`:''}<button type="button" data-font="-1" aria-label="글자 크기 줄이기">가−</button><button type="button" data-font="1" aria-label="글자 크기 키우기">가+</button><button type="button" data-compare aria-pressed="${regCompare}">${regCompare?'비교 닫기':'+ 규정 나란히 비교'}</button></div><div class="regulations-compare ${regCompare?'is-comparing':''}"><div class="reg-pane" data-pane="primary"></div>${regCompare?`<div class="reg-pane" data-pane="secondary"><label class="reg-compare-label">비교 규정<select data-compare-select><option value="">규정 선택</option>${alternatives.map(d=>`<option value="${esc(d.category)}" ${d.category===regCompareCategory?'selected':''}>${esc(regLabel(d.category))}</option>`).join('')}</select></label><div class="reg-secondary-content"></div></div>`:''}</div></div>`;
+ container.querySelectorAll('[data-font]').forEach(button=>button.onclick=()=>{regFontSize=Math.min(24,Math.max(11,regFontSize+Number(button.dataset.font)));container.querySelectorAll('.regulations-document').forEach(el=>el.style.fontSize=regFontSize+'px')});
+ container.querySelector('[data-compare]').onclick=()=>{const primary=container.querySelector('[data-pane=primary]'),selected=primary.querySelector('.reg-selected'),scroll=primary.querySelector('.regulations-document').scrollTop;const selectedLine=selected?Number(selected.dataset.sourceLine):undefined;regCompare=!regCompare;renderRegViewer(container,doc,q,selectedLine);if(selectedLine===undefined)container.querySelector('[data-pane=primary] .regulations-document').scrollTop=scroll};
+ mountRegPane(container.querySelector('[data-pane="primary"]'),doc,q,lineNumber,'primary');
+ if(regCompare){const select=container.querySelector('[data-compare-select]'),target=container.querySelector('.reg-secondary-content');const renderOther=()=>{regCompareCategory=select.value;const other=alternatives.find(d=>d.category===regCompareCategory);if(other)mountRegPane(target,other,'',undefined,'secondary');else target.innerHTML='<p class="hint">비교할 규정을 선택하세요.</p>'};select.onchange=renderOther;renderOther()}
+}
+function mountRegPane(container,doc,q,lineNumber,prefix){
+ const lines=regLines(doc.body),range=regTocRange(lines),showToc=Number.isInteger(lineNumber)&&range&&lineNumber>=range.start&&lineNumber<range.end;
+ const visible=(i)=>!range||showToc||i<range.start||i>=range.end;
+ let withinBylaws=false;
+ const headings=lines.map((line,i)=>{const entry=regTocEntry(line,doc.category);if(entry&&doc.category==='pohang_bylaws'){if(/^\s*\d+\)\s*.*세칙/.test(line)){withinBylaws=true;entry.level=1}else if(withinBylaws&&/^\s*제\s*\d+\s*장/.test(line))entry.level=2;else if(withinBylaws&&/^\s*제\s*\d+\s*절/.test(line))entry.level=3;else if(withinBylaws&&/^\s*제\s*\d+\s*조/.test(line))entry.level=4}return {i,entry}}).filter(x=>x.entry&&visible(x.i));
+ container.innerHTML=`<div class="reg-pane-tools"><label>문서 내 검색<input type="search" data-local-search value="${esc(q)}" placeholder="이 문서에서 검색"></label><button type="button" data-local-next>다음 찾기</button><span data-local-status role="status"></span><button type="button" data-copy>현재 조항 복사</button></div><div class="regulations-viewer"><aside class="regulations-toc" aria-label="원문 목차"><strong>${esc(regLabel(doc.category))}</strong>${headings.map(x=>`<button type="button" data-line="${x.i}" class="toc-${x.entry.type} toc-level-${x.entry.level}">${esc(x.entry.label)}</button>`).join('')||'<p class="hint">인식된 제목이 없습니다.</p>'}</aside><div class="regulations-document" tabindex="0" aria-label="규정 전문">${lines.map((line,i)=>visible(i)?`<div id="${prefix}-line-${i}" data-source-line="${i}" class="reg-line ${regHeading(line)}">${regHighlight(line,q)||'&#8203;'}</div>`:'').join('')}</div></div>`;
+ const documentEl=container.querySelector('.regulations-document'),local=container.querySelector('[data-local-search]'),status=container.querySelector('[data-local-status]');let selected=Number.isInteger(lineNumber)?lineNumber:0,localIndex=-1;documentEl.style.fontSize=regFontSize+'px';
+ function go(i){const target=container.querySelector('[data-source-line="'+i+'"]');if(!target)return;selected=i;container.querySelectorAll('.reg-selected').forEach(x=>x.classList.remove('reg-selected'));target.classList.add('reg-selected');target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'})}
+ container.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>go(Number(b.dataset.line)));
+ documentEl.onclick=e=>{const el=e.target.closest('[data-source-line]');if(el)go(Number(el.dataset.sourceLine))};
+ local.oninput=()=>{localIndex=-1;const query=local.value.trim();documentEl.querySelectorAll('[data-source-line]').forEach(el=>{const i=Number(el.dataset.sourceLine);el.innerHTML=regHighlight(lines[i],query)||'&#8203;'});status.textContent=''};
+ container.querySelector('[data-local-next]').onclick=()=>{const query=local.value.trim();if(!query){status.textContent='검색어를 입력하세요.';return}const found=[];lines.forEach((line,i)=>{if(visible(i)&&regRegex(query).test(line))found.push(i)});if(!found.length){status.textContent='일치하는 내용이 없습니다.';return}localIndex=(localIndex+1)%found.length;status.textContent=(localIndex+1)+' / '+found.length;go(found[localIndex])};
+ container.querySelector('[data-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(regCopyText(lines,selected));status.textContent='복사했습니다.'}catch{status.textContent='복사할 수 없습니다. 본문을 선택해 복사해 주세요.'}};
+ if(Number.isInteger(lineNumber))requestAnimationFrame(()=>go(lineNumber));
+}
 async function openRegulationsEditor(){
  let dialog=$('#regulationsDialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='regulationsDialog';document.body.append(dialog)}
- dialog.innerHTML=`<div class="modalhead"><h2>원문 등록</h2><button type="button" id="regulationsClose">닫기</button></div><form id="regulationsForm"><label>문서 종류<select name="category" required><option value="">문서 종류를 선택하세요</option>${regulationsCategories.map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></label><div id="regulationsLegacy"></div><label>원문 전체<textarea name="body" rows="14" maxlength="2000000" required placeholder="원문을 그대로 붙여넣으세요."></textarea></label><p class="hint">같은 종류를 저장하면 현재 문서가 교체됩니다. 분석 후 원문과 조문을 확인하세요.</p><div class="actions"><button type="button" id="regulationsAnalyze">원문 분석</button><button class="primary" id="regulationsSave" disabled>저장</button></div><p id="regulationsError" role="status"></p><div id="regulationsPreview"></div></form>`;
- const form=$('#regulationsForm'),category=form.elements.category,body=form.elements.body,save=$('#regulationsSave'),status=$('#regulationsError');let token='',analyzed='',choiceTicket=0;
+ dialog.innerHTML=`<div class="modalhead"><h2>규정 등록/관리</h2><button type="button" id="regulationsClose">닫기</button></div><form id="regulationsForm"><label>카테고리<select name="category" required><option value="">카테고리를 선택하세요</option>${regulationsCategories.map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('')}</select></label><button type="button" id="regulationsDelete" hidden>선택한 규정 전체 삭제</button><details class="law-key-settings"><summary>법령 API 인증값 설정</summary><label>API 인증값<input type="password" id="lawApiKey" autocomplete="new-password" maxlength="100" placeholder="발급받은 인증값"></label><div class="actions"><button type="button" id="lawApiKeySave">인증값 저장</button><button type="button" id="lawApiKeyDelete">저장된 인증값 삭제</button></div><p id="lawApiKeyStatus" class="hint" role="status"></p></details><button type="button" id="regulationsLawImport" hidden>법령정보센터에서 가져오기</button><p id="regulationsLawInfo" class="hint"></p><label>파일 불러오기 (.docx, .txt)<input type="file" id="regulationsFile" accept=".txt,.docx"></label><label>원문 전체<textarea name="body" rows="18" maxlength="2000000" required placeholder="원문을 그대로 붙여넣으세요."></textarea></label><p class="hint">저장하면 선택한 카테고리의 기존 원문이 교체됩니다. HWP/DOC는 텍스트를 복사해 붙여넣으세요.</p><button class="primary" id="regulationsSave">원문 저장</button><p id="regulationsError" role="status"></p></form>`;
+ const form=$('#regulationsForm'),category=form.elements.category,body=form.elements.body,status=$('#regulationsError'),save=$('#regulationsSave'),del=$('#regulationsDelete');let token='',ticket=0,original='',initial='',lawCandidate='';
+ async function loadLawKeyStatus(){try{const data=await api('regulations/law-key');if(!dialog.open)return;$('#lawApiKeyStatus').textContent=data.stored?'저장된 인증값을 사용합니다.':data.environment?'서버 환경변수의 인증값을 사용합니다.':'인증값을 한 번 저장해 주세요.';$('#lawApiKeyDelete').hidden=!data.stored}catch(err){if(dialog.open)$('#lawApiKeyStatus').textContent=err.message}}
+ $('#lawApiKeySave').onclick=async()=>{const input=$('#lawApiKey'),value=input.value.trim();if(!value){$('#lawApiKeyStatus').textContent='인증값을 입력하세요.';return}const button=$('#lawApiKeySave');button.disabled=true;try{await api('regulations/law-key',{key:value});input.value='';await loadLawKeyStatus()}catch(err){$('#lawApiKeyStatus').textContent=err.message}finally{button.disabled=false}};
+ $('#lawApiKeyDelete').onclick=async()=>{if(!confirm('저장된 법령 API 인증값을 삭제할까요?'))return;const button=$('#lawApiKeyDelete');button.disabled=true;try{await api('regulations/law-key',{key:''});$('#lawApiKey').value='';await loadLawKeyStatus()}catch(err){$('#lawApiKeyStatus').textContent=err.message}finally{button.disabled=false}};
  $('#regulationsClose').onclick=()=>dialog.close();
- category.onchange=async()=>{const choice=category.value,ticket=++choiceTicket;save.disabled=true;analyzed='';$('#regulationsPreview').replaceChildren();body.value='';token='';body.disabled=true;$('#regulationsAnalyze').disabled=true;if(!choice)return;try{const data=await api('regulations/document?'+new URLSearchParams({category:choice}));if(ticket!==choiceTicket||!dialog.open)return;body.value=data.document?.body||'';token=data.document?.token||'';body.disabled=false;$('#regulationsAnalyze').disabled=false;status.textContent=data.document?'현재 원문을 불러왔습니다. 수정 후 다시 분석해 주세요.':'새 원문을 입력하세요.'}catch(err){if(ticket===choiceTicket)status.textContent='문서를 불러오지 못했습니다. 문서 종류를 다시 선택하세요. '+err.message}};
- body.oninput=()=>{save.disabled=true;analyzed='';$('#regulationsPreview').replaceChildren();status.textContent='원문이 변경되었습니다. 다시 분석해 주세요.'};
- $('#regulationsAnalyze').onclick=async()=>{if(!category.value||!body.value.trim()){status.textContent='문서 종류와 원문을 입력하세요.';return}const original=body.value,choice=category.value;try{status.textContent='분석 중…';const data=await api('regulations/preview',{category:choice,body:original});if(body.value!==original||category.value!==choice)return;analyzed=original;save.disabled=false;status.textContent=`인식한 조문 ${data.article_count}개 · 확인 필요 ${data.review_count}개`;$('#regulationsPreview').innerHTML=data.items.map(item=>`<article class="regulations-analysis-item"><strong>${esc(item.title||'원문')}</strong>${item.review?' <span class="regulations-sample-badge">확인 필요</span>':''}<pre>${esc(item.text)}</pre></article>`).join('')}catch(err){status.textContent=err.message}};
- form.onsubmit=async e=>{e.preventDefault();if(!analyzed||body.value!==analyzed){status.textContent='먼저 현재 원문을 분석하세요.';return}save.disabled=true;try{await api('regulations/save',{category:category.value,body:analyzed,token});dialog.close();await loadRegulations();toast('원문과 조문을 저장했습니다.')}catch(err){status.textContent=err.message;save.disabled=false}};
- body.disabled=true;$('#regulationsAnalyze').disabled=true;dialog.showModal();
- try{const legacy=await api('regulations/legacy');if(dialog.open&&legacy.items.length){$('#regulationsLegacy').innerHTML=`<details><summary>자동으로 분류할 수 없는 기존 원문 ${legacy.items.length}건</summary><p class="hint">기존 자료는 그대로 보존되어 있습니다. 문서 종류를 직접 선택하고 원문을 불러와 확인한 뒤 저장하세요.</p>${legacy.items.map((x,i)=>`<button type="button" data-legacy="${i}">${esc(x.category)} · ${esc(x.title||'기존 문서')}</button>`).join('')}</details>`;dialog.querySelectorAll('[data-legacy]').forEach(button=>button.onclick=()=>{if(!category.value){status.textContent='먼저 저장할 문서 종류를 선택하세요.';return}body.value=legacy.items[Number(button.dataset.legacy)].body;body.dispatchEvent(new Event('input'))})}}catch(err){status.textContent='기존 원문 확인 실패: '+err.message}
+ category.onchange=async()=>{const choice=category.value,t=++ticket;token='';original='';initial='';lawCandidate='';$('#regulationsLawImport').hidden=!['labor_act','union_act'].includes(choice);$('#regulationsLawInfo').textContent='';body.value='';body.disabled=true;save.disabled=true;del.hidden=true;if(!choice)return;try{const data=await api('regulations/document?'+new URLSearchParams({category:choice}));if(t!==ticket||!dialog.open)return;token=data.document?.token||'';original=data.document?.body||'';body.value=original;initial=body.value;del.hidden=!data.document;body.disabled=false;save.disabled=false;status.textContent=data.document?'기존 원문을 불러왔습니다.':'원문을 입력하세요.'}catch(e){if(t===ticket)status.textContent=e.message}};
+ body.oninput=()=>{lawCandidate='';$('#regulationsLawInfo').textContent='원문이 수정되어 직접 입력으로 저장됩니다.'};
+ $('#regulationsLawImport').onclick=async()=>{if(!category.value)return;const choice=category.value,t=++ticket,button=$('#regulationsLawImport');button.disabled=true;category.disabled=true;body.disabled=true;save.disabled=true;lawCandidate='';status.textContent='법령정보센터에서 조회 중…';try{const data=await api('regulations/law-preview',{category:choice});if(t!==ticket||!dialog.open)return;body.value=data.body;lawCandidate=data.candidate;$('#regulationsLawInfo').textContent=`${data.law_name} · 시행일 ${data.effective_date||'미상'} · 공포일 ${data.promulgation_date||'미상'} · 조문 ${data.article_count}개. 본문을 확인한 뒤 원문 저장을 눌러 적용하세요.`;status.textContent='가져온 원문은 아직 저장되지 않았습니다.'}catch(err){status.textContent=err.message}finally{button.disabled=false;category.disabled=false;if(t===ticket){body.disabled=false;save.disabled=false}}};
+ $('#regulationsFile').onchange=async e=>{const file=e.target.files[0];if(!file||!category.value){status.textContent='먼저 카테고리를 선택하세요.';e.target.value='';return}lawCandidate='';$('#regulationsLawInfo').textContent='';const t=++ticket,choice=category.value,data=new FormData();data.append('file',file);body.disabled=true;save.disabled=true;try{const result=await api('regulations/extract',data,true);if(t===ticket&&choice===category.value&&dialog.open){body.value=result.text;status.textContent='파일에서 텍스트를 불러왔습니다. 저장 전 확인해 주세요.'}}catch(err){if(t===ticket)status.textContent=err.message}finally{if(t===ticket){body.disabled=false;save.disabled=false}}};
+ del.onclick=async()=>{const choice=category.value;if(!token||!confirm(`‘${regLabel(choice)}’의 원문 전체를 삭제할까요? 복구하려면 백업이 필요합니다.`))return;del.disabled=true;category.disabled=true;save.disabled=true;try{await api('regulations/delete',{category:choice,token});token='';body.value='';del.hidden=true;status.textContent='원문을 삭제했습니다.';await loadRegulations()}catch(e){status.textContent=e.message}finally{del.disabled=false;category.disabled=false;save.disabled=false}};
+ form.onsubmit=async e=>{e.preventDefault();if(!category.value||!body.value.trim())return;save.disabled=true;category.disabled=true;try{await api('regulations/save',{category:category.value,body:!lawCandidate&&body.value===initial?original:body.value,token,candidate:lawCandidate});dialog.close();await loadRegulations();toast('원문을 저장했습니다.')}catch(err){status.textContent=err.message}finally{save.disabled=false;category.disabled=false}};
+ body.disabled=true;save.disabled=true;dialog.showModal();loadLawKeyStatus();
 }

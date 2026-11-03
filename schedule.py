@@ -93,6 +93,7 @@ def install(a):
             for p in proposals:
                 if p['start'] in protected_dates or event_key(p) in keys:continue
                 p['automatic']=True
+                if kind=='memo' and source_id.startswith('memo:'):p['memo_id']=source_id[5:]
                 subject=p.get('subject','')
                 hits=[r for r in row_list if subject and r['name']!='기타' and r['name'] in subject]
                 # A generic metal-union publisher does not imply its own calendar row.
@@ -287,6 +288,7 @@ def install(a):
             row=c.execute('SELECT * FROM schedule_sources WHERE id=?',(sid,)).fetchone()
             if not row:abort(404)
             if request.args.get('download')=='1':
+                if row['kind']=='memo':return a.app.response_class(row['text'],mimetype='text/plain; charset=utf-8')
                 if row['kind']=='hwp':return send_file(a.DATA/'schedule_sources'/row['path'],as_attachment=True,download_name=row['name'])
                 if row['path'] and (a.DATA/'schedule_sources'/row['path']).is_file():return send_file(a.DATA/'schedule_sources'/row['path'])
                 digest=sid.split(':',1)[1]
@@ -317,7 +319,7 @@ def install(a):
         if not isinstance(b,dict):abort(400)
         if a.current_role()!='admin':
             if set(b)-{'title','row','start','end','kind','status','state','dday'} or b.get('state')!='published':abort(403)
-            if b.get('kind')!='일정' or b.get('status')!='예정':abort(403)
+            if b.get('kind') not in ('일정','교육','회의','교섭','행사','집회','기타') or b.get('status')!='예정':abort(403)
         if b.get('source') is not None and not isinstance(b.get('source'),str):abort(400)
         state=b.get('state');eid=b.get('id') or secrets.token_hex(12)
         if state not in ('pending','published','rejected'):abort(400)

@@ -42,6 +42,14 @@ class ScheduleTests(unittest.TestCase):
   self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,409)
   item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
   self.assertEqual((item['result'],item['result_note']),('잠정합의','다음 주 재논의'))
+ def test_team_member_can_select_each_schedule_kind(self):
+  with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
+  member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
+  body=dict(title='일정',row='1',start='2026-10-30',end='',status='예정',state='published')
+  kinds=['일정','교육','회의','교섭','행사','집회','기타']
+  for kind in kinds:self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':kind},headers=headers).status_code,200,kind)
+  self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':'임의'},headers=headers).status_code,403)
+  self.assertCountEqual([item['kind'] for item in self.guest.get('/api/schedule?month=2026-10').json['events']],kinds)
  def test_dday_permissions_filter_and_preservation(self):
   with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
   member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
