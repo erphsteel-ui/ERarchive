@@ -1,6 +1,6 @@
 """Conservative ER relevance rules, calibrated with user-labelled headlines."""
 import re,unicodedata
-VERSION='2026-10-29.4'
+VERSION='2026-11-03.1'
 CORE=re.compile(r'현대\s*제철|포스코|POSCO',re.I)
 DROP=re.compile(r'레드\s*엔젤스|여자\s*축구|양궁단|스틸러스|\[\s*특징주\s*\]|목표가\s*[↑↓]|부고|인사')
 PROMOTION=re.compile(r'견학|장학금|성료|봉사\s*활동|기부|캠페인|모집|개선\s*활동')
@@ -12,7 +12,8 @@ def strict_drop(title,description='',category_name=None):
     title=unicodedata.normalize('NFKC',title or '')
     text=title+' '+unicodedata.normalize('NFKC',description or '')
     if re.search(r'포스코|POSCO',text,re.I) and not re.search(r'현대\s*제철',text) and not POSCO_ISSUES.search(text):return True
-    return category_name=='기타' and not DIRECT.search(text)
+    steel_outlook=bool(re.search(r'철강|제철',title) and re.search(r'불황|침체|위기|저가|내수|관세|경쟁|수요|공급|과잉',title))
+    return category_name=='기타' and not DIRECT.search(text) and not steel_outlook
 def demoted(title,description=''):
     title=unicodedata.normalize('NFKC',title or '')
     description=unicodedata.normalize('NFKC',description or '')
@@ -30,6 +31,7 @@ def classify(title,description=''):
     if re.search(r'포스코|POSCO',t+' '+d,re.I) and POSCO_ISSUES.search(t+' '+d):return 'keep','포스코 핵심 현안'
     # Keep actual industrial issues, including columns about POSCO labor relations.
     if CORE.search(t) and ISSUE.search(t):return 'keep','현대제철·포스코의 노사·경영·산업 현안'
+    if re.search(r'철강|제철',t) and re.search(r'불황|침체|위기|저가|내수|수요|공급과잉',t):return 'keep','철강 산업 시황·경쟁 환경'
     if re.search(r'철강|제철|조선',t) and re.search(r'인력\s*감축|감원|고용|구조조정|해고|희망퇴직|임단협|교섭|파업|불황|관세|전기요금|탄소',t):
         return 'keep','철강 관련 고용·교섭·산업 환경'
     if re.search(r'축구|양궁|WK리그|K리그|여자\s*축구|올림픽|스포츠|우승|골잡이',t):return 'exclude','스포츠 경기·선수 소식'

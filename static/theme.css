@@ -500,3 +500,13 @@ html[data-theme="light"] #categorySubFilters button{color:#334155;border-color:#
 @media(max-width:650px){.category-orgtypes{border-left:0;padding-left:0;width:100%}}
 
 .regulations-toc button.toc-level-4{padding-left:40px;font-weight:400}
+/* Trend notes are visible to administrators only. */
+#readerTabs #readerMemoTab{text-decoration:line-through;text-decoration-thickness:1.5px;color:#9aa6b5}
+body.viewerrole #readerTabs #readerMemoTab{pointer-events:none;opacity:.6}
+html[data-theme="light"] #readerTabs #readerMemoTab{color:#64748b}
+#schedulePanel .schedule-briefing{justify-self:center;display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;flex-wrap:wrap}
+#schedulePanel .occasion-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03)}
+#schedulePanel .occasion-heading{color:#f2cc90;white-space:nowrap}#schedulePanel .occasion-badge{border-color:#816743;background:#443725;color:#fff1d1}#schedulePanel #occasionAdd,#schedulePanel #occasionMore{white-space:nowrap}.occasion-note{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}#occasionDialog{width:min(520px,96vw)}#occasionForm input,#occasionForm select,#occasionForm textarea{width:100%}
+@media(max-width:1250px){#schedulePanel .schedule-briefing{grid-column:1/-1;grid-row:2}}
+@media(max-width:700px){#schedulePanel .schedule-briefing{width:100%;justify-content:flex-start}}
+html[data-theme="light"] #schedulePanel .occasion-bar{background:#f8fafc;border-color:#cbd5e1}html[data-theme="light"] #schedulePanel .occasion-heading{color:#92400e}

@@ -13,7 +13,7 @@ def install(a):
         for key in ('organizations','links','related'):d[key]=json.loads(d[key])
         return d
     @a.app.get('/api/memos')
-    @a.protected()
+    @a.protected(True)
     def memos_list():
         admin=a.current_role()=='admin';where=[];params=[]
         if not session.get('csrf'):session['csrf']=secrets.token_hex(24)
@@ -47,7 +47,7 @@ def install(a):
         for row in records:row['organizations']=json.loads(row['organizations'])
         return jsonify(items=records,total=total,categories=CATEGORIES,verification_options=VERIFY,organizations=orgs,csrf=session['csrf'])
     @a.app.get('/api/memos/<mid>')
-    @a.protected()
+    @a.protected(True)
     def memos_detail(mid):
         admin=a.current_role()=='admin'
         with a.db() as c:
@@ -60,6 +60,7 @@ def install(a):
             if admin:d['history']=[dict(r) for r in c.execute('SELECT version,data,changed FROM trend_memo_history WHERE memo=? ORDER BY version DESC LIMIT 20',(mid,))]
         return jsonify(d)
     @a.app.post('/api/memos/save')
+    @a.protected(True)
     def memos_save():
         if not session.get('csrf') or not secrets.compare_digest(request.headers.get('X-CSRF',''),session['csrf']):abort(403)
         b=request.get_json(silent=True)
@@ -110,8 +111,13 @@ def install(a):
                 c.execute('INSERT INTO trend_memo_history(memo,version,data,changed) VALUES(?,?,?,?)',(mid,old['version'],json.dumps(unpack(old),ensure_ascii=False),a.stamp()))
                 c.execute('UPDATE trend_memos SET title=?,organizations=?,category=?,received=?,source=?,original=?,summary=?,verification=?,links=?,related=?,important=?,version=version+1,updated=? WHERE id=?',values+[int(important),a.stamp(),mid])
             else:c.execute('INSERT INTO trend_memos VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,1,?,?)',[mid]+values+[int(important),a.stamp(),a.stamp()])
+            queued=not old
+            if queued:
+                # Store the review source in the same transaction as the memo.
+                c.execute('INSERT INTO schedule_sources(id,name,kind,text,path,created,status,reference) VALUES(?,?,?,?,?,?,?,?)',('memo:'+mid,data['title'],'memo',data['original'],'',a.stamp(),'일정 분석 대기',data['received']))
             a.log(c,'동향 메모 저장',mid)
-        return jsonify(ok=True,id=mid)
+        if queued and hasattr(a,'request_schedule_scan'):a.request_schedule_scan()
+        return jsonify(ok=True,id=mid,schedule_queued=queued)
     @a.app.post('/api/memos/archive')
     @a.protected(True)
     def memos_archive():

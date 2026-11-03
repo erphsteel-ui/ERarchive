@@ -93,6 +93,7 @@ def install(a):
             for p in proposals:
                 if p['start'] in protected_dates or event_key(p) in keys:continue
                 p['automatic']=True
+                if kind=='memo' and source_id.startswith('memo:'):p['memo_id']=source_id[5:]
                 subject=p.get('subject','')
                 hits=[r for r in row_list if subject and r['name']!='기타' and r['name'] in subject]
                 # A generic metal-union publisher does not imply its own calendar row.
@@ -287,6 +288,7 @@ def install(a):
             row=c.execute('SELECT * FROM schedule_sources WHERE id=?',(sid,)).fetchone()
             if not row:abort(404)
             if request.args.get('download')=='1':
+                if row['kind']=='memo':return a.app.response_class(row['text'],mimetype='text/plain; charset=utf-8')
                 if row['kind']=='hwp':return send_file(a.DATA/'schedule_sources'/row['path'],as_attachment=True,download_name=row['name'])
                 if row['path'] and (a.DATA/'schedule_sources'/row['path']).is_file():return send_file(a.DATA/'schedule_sources'/row['path'])
                 digest=sid.split(':',1)[1]
