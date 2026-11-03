@@ -650,3 +650,8 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
  #scheduleMain .schedule-table.compact-calendar .schedule-org,body.viewerrole #scheduleMain .schedule-table.compact-calendar .schedule-org{width:48px;min-width:48px;max-width:48px;padding:3px 1px;text-align:center;white-space:normal;line-height:1.25;overflow:hidden}
  #scheduleMain .schedule-table.compact-calendar .schedule-org-col{width:48px}
 }
+
+/* 그룹사·계열사·노동계·기타 일정의 말머리는 카드 왼쪽 위에 둔다. */
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event-wrap .schedule-event{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left}
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event .schedule-actor{display:block;align-self:flex-start;text-align:left;margin:0 0 1px}
+#scheduleMain .compact-calendar td:is([data-calendar-group="group"],[data-calendar-group="affiliate"],[data-calendar-group="labor"],[data-calendar-group="other"]) .schedule-event b{align-self:stretch;text-align:left}
