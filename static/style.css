@@ -157,3 +157,16 @@ body.viewerrole .schedule-event b{font-size:10px;line-height:1.35;display:-webki
  #schedulePrintSheet .schedule-table .schedule-org{width:8.2mm;min-width:8.2mm;max-width:8.2mm;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
  #schedulePrintSheet .schedule-event,#schedulePrintSheet .schedule-event:not(.schedule-muted),#schedulePrintSheet .schedule-event b{word-break:keep-all;overflow-wrap:break-word}
 }
+@page{size:A3 landscape;margin:6mm}
+@media print{
+ body.schedule-print-ready>#schedulePrintSheet{display:flex!important;flex-direction:column;height:285mm;box-sizing:border-box;break-inside:avoid;page-break-inside:avoid}
+ #schedulePrintSheet h1{flex:0 0 auto;margin:0 0 3mm}
+ #schedulePrintSheet .schedule-table{flex:1 1 auto;height:100%;min-height:0;break-inside:avoid;page-break-inside:avoid}
+ #schedulePrintSheet .schedule-table tbody tr{height:32.5mm;break-inside:avoid;page-break-inside:avoid}
+ #schedulePrintSheet .schedule-table tbody td{height:32.5mm;vertical-align:top}
+ #schedulePrintSheet .calendar-day{display:flex;flex-direction:column;gap:4px;height:auto;min-height:calc(32.5mm - 2px);justify-content:flex-start}
+ #schedulePrintSheet .schedule-event-wrap{display:flex;flex:1 0 auto;min-height:36px}
+ #schedulePrintSheet .schedule-event,#schedulePrintSheet .schedule-event:not(.schedule-muted){box-sizing:border-box;display:block;width:100%;height:auto;min-height:36px;padding:5px 1px;line-height:1.3;white-space:normal;overflow:visible}
+ #schedulePrintSheet .schedule-event b{display:block;max-height:none;-webkit-line-clamp:unset;-webkit-box-orient:initial;line-height:1.3;white-space:normal;overflow:visible;text-overflow:clip}
+ #schedulePrintSheet .schedule-event .schedule-actor{max-height:none;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-overflow:clip}
+}
