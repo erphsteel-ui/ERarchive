@@ -155,4 +155,5 @@ body.viewerrole .schedule-event b{font-size:10px;line-height:1.35;display:-webki
  #schedulePrintSheet .schedule-table{--calendar-org-width:8.2mm}
  #schedulePrintSheet .schedule-table .schedule-org-col{width:8.2mm}
  #schedulePrintSheet .schedule-table .schedule-org{width:8.2mm;min-width:8.2mm;max-width:8.2mm;text-align:center;white-space:normal;line-height:1.15;overflow:hidden}
+ #schedulePrintSheet .schedule-event,#schedulePrintSheet .schedule-event:not(.schedule-muted),#schedulePrintSheet .schedule-event b{word-break:keep-all;overflow-wrap:break-word}
 }

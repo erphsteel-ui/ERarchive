@@ -650,3 +650,6 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
  #scheduleMain .schedule-table.compact-calendar .schedule-org,body.viewerrole #scheduleMain .schedule-table.compact-calendar .schedule-org{width:48px;min-width:48px;max-width:48px;padding:3px 1px;text-align:center;white-space:normal;line-height:1.25;overflow:hidden}
  #scheduleMain .schedule-table.compact-calendar .schedule-org-col{width:48px}
 }
+/* 띄어쓰기 단위로 먼저 줄바꿈하고, 칸보다 긴 단어만 예외로 나눈다. */
+#scheduleMain .compact-calendar .schedule-event b,#scheduleMain .compact-calendar:not(.schedule-two-weeks) .schedule-event b,#scheduleMain .compact-calendar.schedule-two-weeks .schedule-event b{word-break:keep-all;overflow-wrap:break-word}
+#scheduleMain .compact-calendar thead th{vertical-align:middle}
