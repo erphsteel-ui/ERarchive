@@ -527,3 +527,17 @@ html[data-theme="light"] #schedulePanel .occasion-bar{background:#f8fafc;border-
 .schedule-tone-rally{--kind-border:#f43f5e}#scheduleMain .compact-calendar .schedule-event.schedule-tone-rally:not(.schedule-muted){background:#4b1b2c;border-color:#f43f5e;color:#ffe4e6!important}html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-rally:not(.schedule-muted){background:#fff1f2;border-color:#fda4af;color:#881337!important}@media print{#schedulePrintSheet .schedule-event.schedule-tone-rally:not(.schedule-muted){background:#fff1f2!important;border-color:#fda4af!important;color:#881337!important}}
 .schedule-tone-other{--kind-border:#64748b}#scheduleMain .compact-calendar .schedule-event.schedule-tone-other:not(.schedule-muted){background:#293445;border-color:#64748b;color:#e2e8f0!important}html[data-theme="light"] #scheduleMain .compact-calendar .schedule-event.schedule-tone-other:not(.schedule-muted){background:#f1f5f9;border-color:#cbd5e1;color:#1e293b!important}@media print{#schedulePrintSheet .schedule-event.schedule-tone-other:not(.schedule-muted){background:#f1f5f9!important;border-color:#cbd5e1!important;color:#1e293b!important}}
 @media(max-width:700px){#schedulePanel .occasion-bar{max-width:100%;overflow-x:auto}#schedulePanel .occasion-group{max-width:70vw;flex:none}}
+
+/* 금주 경조사는 날짜별 헤더와 개별 항목으로 표시한다. */
+#schedulePanel .occasion-bar{padding:8px 16px;gap:16px;overflow:hidden;align-items:center}
+#schedulePanel .occasion-columns{display:flex;align-items:center;gap:24px;min-width:0;overflow-x:auto;scrollbar-width:thin}
+#schedulePanel .occasion-column{flex:none;min-width:0;padding-right:24px;border-right:1px solid rgba(71,85,105,.6)}
+#schedulePanel .occasion-column:last-child{padding-right:0;border-right:0}
+#schedulePanel .occasion-date{margin-bottom:4px;color:#fbbf24;font-size:12px;font-weight:600;letter-spacing:-.02em;white-space:nowrap}
+#schedulePanel .occasion-people{display:flex;align-items:center;white-space:nowrap}
+#schedulePanel .occasion-person{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:#cbd5e1;font:inherit;font-size:12px;text-align:left;white-space:nowrap}
+#schedulePanel .occasion-person:hover{text-decoration:underline;background:transparent}
+#schedulePanel .occasion-person strong{color:#f1f5f9;font-weight:600}#schedulePanel .occasion-dot{color:#64748b}#schedulePanel .occasion-obituary{color:#fb7185;font-weight:500}#schedulePanel .occasion-reason{color:#cbd5e1;font-weight:400}#schedulePanel .occasion-separator{margin:0 10px;color:#475569}
+#schedulePanel .occasion-empty{color:#94a3b8;font-size:12px;white-space:nowrap}#schedulePanel .occasion-actions{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+html[data-theme="light"] #schedulePanel .occasion-date{color:#92400e}html[data-theme="light"] #schedulePanel .occasion-person strong{color:#0f172a}html[data-theme="light"] #schedulePanel .occasion-reason{color:#334155}html[data-theme="light"] #schedulePanel .occasion-obituary{color:#be123c}html[data-theme="light"] #schedulePanel .occasion-empty{color:#64748b}
+@media(max-width:700px){#schedulePanel .occasion-bar{width:100%;overflow:hidden}#schedulePanel .occasion-columns{flex:1}}
