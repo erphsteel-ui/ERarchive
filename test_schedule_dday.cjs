@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(__dirname+'/static/schedule.js','utf8');const context=vm.createContext({});
+vm.runInContext(source.slice(source.indexOf('function scheduleKoreanDate('),source.indexOf('function scheduleDDayButton(')),context);
+assert.equal(vm.runInContext("scheduleKoreanDate(new Date('2026-10-28T15:00:00Z'))",context),'2026-10-29');
+assert.equal(vm.runInContext("scheduleDDayDifference('2026-11-02','2026-10-29')",context),4);
+assert.equal(vm.runInContext("scheduleDDayDifference('2026-11-02','2026-11-02')",context),0);
+assert.equal(vm.runInContext("scheduleDDayDifference('2026-11-02','2026-11-03')",context),-1);
+assert.equal(vm.runInContext("scheduleDDayDifference('2027-01-01','2026-12-31')",context),1);
+assert.equal(vm.runInContext("scheduleDDayDifference('2026-02-30','2026-02-28')",context),null);
+context.items=[{id:'3',title:'나',start:'2026-11-02'},{id:'1',title:'가',start:'2026-11-02'},{id:'2',title:'과거',start:'2026-10-28'},{id:'4',title:'잘못된 날짜',start:'2026-02-30'}];
+assert.deepEqual(Array.from(vm.runInContext("sortedScheduleDDays(items,'2026-10-29').map(x=>x.id)",context)),['1','3']);
+console.log('PASS: Korean midnight, date-only difference, year boundary, invalid and past dates, sort');
