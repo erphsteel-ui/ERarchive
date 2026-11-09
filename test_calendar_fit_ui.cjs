@@ -1,0 +1,18 @@
+const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('playwright');
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
+ const js=fs.readFileSync('static/schedule.js','utf8');
+ for(const role of ['admin','viewer'])for(const width of [1280,1920]){
+  const page=await browser.newPage({viewport:{width,height:900}});await page.setContent(`<html data-theme="light"><body class="${role==='viewer'?'viewerrole':''}"><div id="schedulePanel"><div id="scheduleMain"><div class="schedule-scroll"><table class="schedule-table compact-calendar"></table></div></div></div></body></html>`);
+  await page.addStyleTag({content:fs.readFileSync('static/style.css','utf8')});await page.addStyleTag({content:fs.readFileSync('static/theme.css','utf8')});
+  await page.evaluate(role=>{window.scheduleData={rows:[{id:'a',group:'당사',name:'포항'}],events:[],day_orders:{}};window.scheduleMonth='2026-10';window.scheduleZoom=false;window.scheduleAnchor='';window.user={role};window.esc=s=>String(s??'')},role);
+  await page.addScriptTag({content:js.slice(js.indexOf('function calendarGroups(){'),js.indexOf('function renderScheduleGrid(){'))});
+  for(const [month,days] of [['2026-02',28],['2024-02',29],['2026-04',30],['2026-10',31]]){
+   const dimensions=await page.evaluate(month=>{scheduleMonth=month;const t=document.querySelector('table');t.innerHTML=compactCalendarHTML();sizeScheduleColumns(t,scheduleVisibleDates());const h=[...t.querySelectorAll('thead th[data-calendar-date]')],sun=h.find(x=>new Date(x.dataset.calendarDate+'T00:00:00').getDay()===0),normal=h.find(x=>new Date(x.dataset.calendarDate+'T00:00:00').getDay()===1),scroller=t.parentElement;return {count:h.length,first:h[0].textContent,last:h.at(-1).textContent,sunday:sun.getBoundingClientRect().width,normal:normal.getBoundingClientRect().width,org:t.querySelector('.schedule-org').getBoundingClientRect().width,scroll:scroller.scrollWidth,client:scroller.clientWidth,group:t.querySelector('tbody tr:nth-child(2) .schedule-org')?.innerText}},month);
+   assert.equal(dimensions.count,days);assert.match(dimensions.first,/^1/);assert.match(dimensions.last,new RegExp('^'+days));assert(Math.abs(dimensions.sunday/dimensions.normal-.7)<.03,JSON.stringify({role,width,month,dimensions}));assert.equal(Math.round(dimensions.org),48);assert(dimensions.scroll<=dimensions.client+1,JSON.stringify({role,width,month,dimensions}));assert.equal(dimensions.group,'포항');
+  }
+  const twoWeeks=await page.evaluate(()=>{scheduleMonth='2026-10';scheduleZoom=true;scheduleAnchor='2026-10-29';const t=document.querySelector('table');t.classList.add('schedule-two-weeks');t.innerHTML=compactCalendarHTML();sizeScheduleColumns(t,scheduleVisibleDates());const h=[...t.querySelectorAll('thead th[data-calendar-date]')],sun=h.find(x=>new Date(x.dataset.calendarDate+'T00:00:00').getDay()===0),normal=h.find(x=>new Date(x.dataset.calendarDate+'T00:00:00').getDay()===1);return {first:h[0].dataset.calendarDate,last:h.at(-1).dataset.calendarDate,ratio:sun.getBoundingClientRect().width/normal.getBoundingClientRect().width,scroll:t.parentElement.scrollWidth,client:t.parentElement.clientWidth}});
+  assert.equal(twoWeeks.first,'2026-10-29');assert.equal(twoWeeks.last,'2026-11-11');assert(Math.abs(twoWeeks.ratio-.7)<.03);assert(twoWeeks.scroll<=twoWeeks.client+1);
+  await page.close();
+ }
+ console.log('PASS: all dates fit without horizontal scrolling, Sunday columns are 70%, and company rows are centered on two lines');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});
