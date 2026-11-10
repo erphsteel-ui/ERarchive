@@ -894,3 +894,18 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
  body #workspace #global_header .actions #themeToggle{font-size:0}
  body #workspace #global_header .actions #themeToggle::after{font-size:17px}
 }
+
+/* Compact mobile schedule rows. */
+@media screen and (max-width:960px){
+ #scheduleMain .schedule-agenda-day{padding:7px}
+ #scheduleMain .schedule-agenda-group+.schedule-agenda-group{margin-top:3px}
+ #scheduleMain .schedule-agenda-group-heading{display:flex;justify-content:flex-end;margin:2px 0}
+ #workspace #scheduleMain .schedule-agenda-event[class*="cat-"]{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:8px;width:100%;min-width:0;min-height:44px;padding:10px 14px;margin:3px 0}
+ #scheduleMain .schedule-card-left{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0}
+ #scheduleMain .schedule-card-group{flex:0 0 auto;min-width:40px;font-size:13px;font-weight:600;color:#64748b;white-space:nowrap}
+ #scheduleMain .schedule-agenda-event[class*="cat-"] .schedule-agenda-actor{align-self:center;flex:0 1 auto;max-width:25%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #workspace #scheduleMain .schedule-agenda-event .schedule-card-left strong{display:block;flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;word-break:normal;overflow-wrap:normal}
+ #scheduleMain .schedule-card-right{display:flex;align-items:center;gap:4px;flex-shrink:0;font-size:12px;color:#64748b;white-space:nowrap}
+ #scheduleMain .schedule-card-right i{width:7px;height:7px;border-radius:50%;background:var(--cat-accent);flex:none}
+ #scheduleMain .schedule-card-extra{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+}
