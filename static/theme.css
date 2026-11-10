@@ -827,3 +827,70 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
 @media(max-width:768px){body.viewerrole #global_header .actions #logout:not([hidden]){display:block!important}}
 .account-actions{display:flex;flex-direction:column;gap:8px}.account-actions button{min-height:44px;text-align:left}.reader-account{border-top:1px solid var(--line);padding:12px 0;overflow-wrap:anywhere}.reader-account>span{margin-left:8px;color:var(--muted)}.reader-account>div{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.reader-account button{min-height:42px}#readersDialog,#accountDialog,#resetReaderDialog{width:min(520px,96vw);max-height:90dvh;overflow:auto}
 @media(max-width:768px){#global_header .actions #accountMenu{display:block!important;font-size:11px;padding:7px 5px;white-space:nowrap}#global_header .actions #logout,#global_header .actions #adminLogin,body.viewerrole #global_header .actions #logout:not([hidden]){display:none!important}}
+
+/* Foldable and phone schedule: keep actions touchable while showing more events. */
+@media screen and (max-width:960px){
+ body.viewerrole main,body:not(.viewerrole) main,body.viewerrole.regulations-open main,body.schedule-open.viewerrole main{margin:0;padding:4px 10px calc(78px + env(safe-area-inset-bottom));min-width:0;max-width:100%}
+ body #workspace main>header.global-topbar{height:44px;min-height:44px;max-height:44px;display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:4px;padding:0;overflow:hidden;margin-bottom:7px}
+ body #workspace .global-topbar .reader-home-title{display:none!important}
+ #global_header .mobile-brand{display:flex;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;margin:0}
+ #global_header .mobile-brand span{display:block;font-size:14px;line-height:1.2;font-weight:800;overflow:hidden;text-overflow:ellipsis}
+ #global_header #roleBadge{flex:none;font-size:11px;padding:3px 6px}
+ body #workspace .global-topbar .global-actions{display:flex;flex:0 0 auto;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:4px;overflow:visible;white-space:nowrap;margin:0}
+ #global_header .actions>*{display:none!important}
+ #global_header .actions #accountMenu,#global_header .actions #themeToggle{display:block!important;min-height:38px;height:38px;padding:5px 9px;font-size:12px}
+ #global_header .actions #themeToggle{font-size:0;padding:5px 9px}
+ #global_header .actions #themeToggle::after{content:'◐';font-size:17px}
+ body #readerTabs,body.viewerrole #readerTabs,body:not(.viewerrole) #readerTabs{display:flex;position:fixed;z-index:40;left:0;right:0;top:auto;bottom:0;margin:0;padding:4px 8px calc(4px + env(safe-area-inset-bottom));gap:4px;flex-wrap:nowrap;border-top:1px solid var(--line);border-bottom:0;background:var(--surface,#101b2a)}
+ #readerTabs button{flex:1 1 0;min-width:0;min-height:46px;padding:4px 2px;font-size:12px;white-space:nowrap}
+ #mobileFab{display:block;position:fixed;z-index:35;right:14px;bottom:calc(65px + env(safe-area-inset-bottom));width:48px;height:48px;min-height:48px;padding:0;border-radius:50%;background:var(--blue);color:#fff;font-size:28px;line-height:1;box-shadow:0 4px 14px #0005}
+ body.viewerrole #mobileFab{display:none!important}
+ #schedulePanel .schedule-header{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0 0 6px}
+ #workspace #schedulePanel .schedule-header-title h1{font-size:19px;line-height:1.25;letter-spacing:-.03em;margin:0}
+ #schedulePanel .schedule-header-actions{display:none}
+ #schedulePanel .schedule-briefing{width:100%;min-width:0;display:flex;justify-content:flex-start;gap:0}
+ #schedulePanel .schedule-briefing:has(#scheduleDDays[hidden]){display:none}
+ #schedulePanel #occasionBar{display:none!important}
+ #schedulePanel .schedule-ddays:not([hidden]){width:100%;max-width:100%;padding:3px;gap:4px;justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;border-radius:8px}
+ #workspace #schedulePanel .schedule-dday-badge,#workspace #schedulePanel .schedule-dday-more{flex:0 0 auto;min-height:40px;max-width:240px;padding:4px 8px;font-size:13px}
+ #schedulePanel .schedule-control-bar{display:flex;flex-direction:row;align-items:center;gap:0;min-height:0;padding:4px;margin:0 0 6px;border-radius:8px}
+ #schedulePanel .schedule-control-group.schedule-date-group{display:flex;flex:1 1 0;width:100%;min-width:0;flex-wrap:nowrap;gap:4px}
+ #schedulePanel .schedule-month-group{display:flex;flex:1 1 0;min-width:0;overflow:hidden}
+ #workspace #schedulePanel .schedule-month-group button,#workspace #schedulePanel .schedule-month-group input,#workspace #schedulePanel #scheduleToday{height:44px;min-height:44px;font-size:14px;line-height:1.15}
+ #workspace #schedulePanel .schedule-month-group button{flex:0 0 40px;width:40px;padding:0}
+ #workspace #schedulePanel .schedule-month-group input{flex:1 1 0;width:0;min-width:0;padding:0 3px}
+ #workspace #schedulePanel #scheduleToday{flex:0 0 auto;white-space:nowrap;padding:0 9px}
+ #schedulePanel .schedule-view-toggle,#schedulePanel .schedule-control-divider,#schedulePanel .schedule-utilities{display:none!important}
+ #scheduleMain .schedule-grid-header{margin:0 0 5px}
+ #scheduleMain .schedule-legend{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
+ #scheduleMain .schedule-legend-badge{flex:none;font-size:12px;line-height:1.2;padding:4px 6px}
+ #scheduleMain .schedule-agenda-heading{gap:4px;margin:0 0 5px}
+ #scheduleMain .schedule-agenda-intro{font-size:13px;line-height:1.25;margin:0}
+ #scheduleMain #scheduleAgendaAdd{display:none}
+ #scheduleMain .schedule-agenda-list{gap:7px}
+ #scheduleMain .schedule-agenda-day{padding:8px;border-radius:9px;min-width:0}
+ #scheduleMain .schedule-agenda-day h2{font-size:15px;line-height:1.25;margin:0 0 5px;gap:5px}
+ #scheduleMain .schedule-agenda-today{font-size:12px;padding:2px 5px}
+ #scheduleMain .schedule-agenda-group+.schedule-agenda-group{margin-top:6px}
+ #scheduleMain .schedule-agenda-group-heading{font-size:13px;line-height:1.2;margin:0 0 3px}
+ #workspace #scheduleMain .schedule-agenda-event{min-height:44px;padding:6px 8px;margin:3px 0;gap:2px}
+ #workspace #scheduleMain .schedule-agenda-event strong{font-size:15px;line-height:1.3;white-space:normal;word-break:keep-all;overflow-wrap:anywhere}
+ #scheduleMain .schedule-agenda-meta,#scheduleMain .schedule-agenda-actor{font-size:12px;line-height:1.25}
+}
+@media screen and (max-width:960px){
+ #scheduleMain .schedule-legend{justify-content:flex-start}
+ #workspace #schedulePanel .schedule-agenda-group-heading button{min-height:36px;font-size:13px;line-height:1.2;padding:5px 8px}
+}
+@media screen and (max-width:960px){
+ #scheduleMain .schedule-legend{gap:3px}
+ #scheduleMain .schedule-legend-badge{font-size:11px;padding:3px 4px;gap:3px}
+}
+
+/* Keep phone details focused and align the header actions. */
+@media screen and (max-width:960px){
+ #scheduleEventDialog .schedule-context,#scheduleMain .schedule-agenda-heading{display:none}
+ body #workspace #global_header .actions #accountMenu,body #workspace #global_header .actions #themeToggle{box-sizing:border-box;width:40px;min-width:40px;height:40px;min-height:40px;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);box-shadow:none;text-align:center;line-height:1}
+ body #workspace #global_header .actions #accountMenu{font-size:12px}
+ body #workspace #global_header .actions #themeToggle{font-size:0}
+ body #workspace #global_header .actions #themeToggle::after{font-size:17px}
+}
