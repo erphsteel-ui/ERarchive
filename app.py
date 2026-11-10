@@ -28,7 +28,7 @@ DATA.mkdir(parents=True, exist_ok=True)
 key = DATA / 'secret.key'
 if not key.exists(): key.write_text(secrets.token_hex(32))
 app = Flask(__name__)
-app.config.update(SECRET_KEY=key.read_text(), MAX_CONTENT_LENGTH=65*1024*1024, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict', SESSION_COOKIE_SECURE=os.environ.get('COOKIE_SECURE')=='1', PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=8))
+app.config.update(SECRET_KEY=key.read_text(), MAX_CONTENT_LENGTH=65*1024*1024, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict', SESSION_COOKIE_SECURE=os.environ.get('COOKIE_SECURE')=='1', PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30), SESSION_REFRESH_EACH_REQUEST=False)
 LOCK=threading.Lock()
 ATTEMPTS={}
 class ClosingConnection(sqlite3.Connection):
@@ -49,6 +49,9 @@ def init():
     with db() as c:
         c.execute('PRAGMA journal_mode=WAL')
         c.executescript('''CREATE TABLE IF NOT EXISTS users(name TEXT PRIMARY KEY,password TEXT,role TEXT);
+CREATE TABLE IF NOT EXISTS user_access(name TEXT PRIMARY KEY REFERENCES users(name) ON DELETE CASCADE,disabled INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,name TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,expires INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_name ON auth_sessions(name);
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,meta TEXT,created TEXT,updated TEXT,version INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY,doc TEXT REFERENCES documents(id) ON DELETE CASCADE,path TEXT,hash TEXT UNIQUE,text TEXT,status TEXT,position INTEGER);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time TEXT,actor TEXT,action TEXT,doc TEXT);
@@ -70,7 +73,7 @@ def protected(admin=False, reader_write=False):
         @wraps(fn)
         def wrap(*a,**kw):
             with db() as c: u=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
-            if not u and (admin or request.method not in ('GET','HEAD')): abort(401)
+            if not u: abort(401)
             if (admin or (request.method not in ('GET','HEAD') and not reader_write)) and u['role']!='admin': abort(403)
             if request.method not in ('GET','HEAD') and not secrets.compare_digest(request.headers.get('X-CSRF',''),session.get('csrf','invalid')): abort(403)
             return fn(*a,**kw)
@@ -94,6 +97,20 @@ def viewer_ip_allowed(c,client):
 def viewer_ip_restriction_enabled(c):
     row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_restriction_enabled'").fetchone()
     return bool(row and row[0]=='1')
+
+def session_token_hash(token):
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+@app.before_request
+def require_authenticated_api():
+    if not request.path.startswith('/api/') or request.path=='/api/login': return
+    name=session.get('user');token=session.get('auth_token')
+    if not isinstance(name,str) or not isinstance(token,str) or len(token)!=64:
+        session.clear();abort(401)
+    with db() as c:
+        row=c.execute("SELECT u.role,s.expires,COALESCE(a.disabled,0) AS disabled FROM auth_sessions s JOIN users u ON u.name=s.name LEFT JOIN user_access a ON a.name=u.name WHERE s.token_hash=? AND s.name=?",(session_token_hash(token),name)).fetchone()
+    if not row or row['disabled'] or row['expires']<=int(time.time()):
+        session.clear();abort(401)
 
 @app.before_request
 def restrict_viewer_api():
@@ -160,7 +177,9 @@ def healthz():
 def login():
     # Cross-origin JSON POST is not permitted; no CORS enabled.
     if not request.is_json: abort(400)
-    b=request.get_json(); name=str(b.get('name','')); addr=request.remote_addr; now=time.time()
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict): abort(400)
+    name=str(b.get('name','')); addr=request.remote_addr; now=time.time()
     with LOCK:
         for key in list(ATTEMPTS):
             recent=[t for t in ATTEMPTS[key] if now-t<300]
@@ -169,22 +188,32 @@ def login():
         failures=ATTEMPTS.get(addr,[])
         if len(failures)>=10: return jsonify(error='로그인 시도가 많습니다. 5분 뒤 다시 시도하세요.'),429
         ATTEMPTS[addr]=failures+[now]
-    with db() as c: u=c.execute('SELECT * FROM users WHERE name=?',(name,)).fetchone()
-    if not u or not check_password_hash(u['password'],str(b.get('password',''))): return jsonify(error='아이디 또는 비밀번호가 맞지 않습니다.'),401
+    with db() as c: u=c.execute('SELECT u.*,COALESCE(a.disabled,0) AS disabled FROM users u LEFT JOIN user_access a ON a.name=u.name WHERE u.name=?',(name,)).fetchone()
+    if not u or u['disabled'] or not check_password_hash(u['password'],str(b.get('password',''))): return jsonify(error='아이디 또는 비밀번호가 맞지 않습니다.'),401
     with LOCK: ATTEMPTS.pop(addr,None)
-    session.clear(); session['user']=name; session['csrf']=secrets.token_hex(24); session.permanent=True
+    token=secrets.token_hex(32); previous=session.get('auth_token')
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        current=c.execute('SELECT u.password,u.role,COALESCE(a.disabled,0) AS disabled FROM users u LEFT JOIN user_access a ON a.name=u.name WHERE u.name=?',(name,)).fetchone()
+        if not current or current['disabled'] or current['password']!=u['password'] or current['role']!=u['role']:
+            return jsonify(error='아이디 또는 비밀번호가 맞지 않습니다.'),401
+        if isinstance(previous,str) and len(previous)==64:c.execute('DELETE FROM auth_sessions WHERE token_hash=?',(session_token_hash(previous),))
+        c.execute('DELETE FROM auth_sessions WHERE expires<=?',(int(now),))
+        c.execute('INSERT INTO auth_sessions VALUES(?,?,?)',(session_token_hash(token),name,int(now)+30*24*3600))
+    session.clear(); session['user']=name; session['auth_token']=token; session['csrf']=secrets.token_hex(24); session.permanent=True
     return jsonify(user=name,role=u['role'],csrf=session['csrf'])
 @app.post('/api/change-password')
-@protected(True)
+@protected(reader_write=True)
 def change_password():
     b=request.get_json(silent=True) or {}; old=b.get('current',''); new=b.get('new','')
-    if not isinstance(old,str) or not isinstance(new,str) or not 4<=len(new)<=128:
-        return jsonify(error='새 비밀번호는 4~128자로 입력하세요.'),400
+    if not isinstance(old,str) or not isinstance(new,str) or not 12<=len(new)<=128:
+        return jsonify(error='새 비밀번호는 12~128자로 입력하세요.'),400
     with db() as c:
         u=c.execute('SELECT password FROM users WHERE name=?',(session['user'],)).fetchone()
         if not u or not check_password_hash(u['password'],old):return jsonify(error='현재 비밀번호가 맞지 않습니다.'),400
         c.execute('UPDATE users SET password=? WHERE name=?',(generate_password_hash(new),session['user']))
-        log(c,'관리자 비밀번호 변경')
+        c.execute('DELETE FROM auth_sessions WHERE name=? AND token_hash!=?',(session['user'],session_token_hash(session['auth_token'])))
+        log(c,'비밀번호 변경')
     return jsonify(ok=True)
 
 @app.get('/api/me')
@@ -199,7 +228,42 @@ def current_role():
     return u['role'] if u else 'viewer'
 @app.post('/api/logout')
 @protected(reader_write=True)
-def logout(): session.clear(); return jsonify(ok=True)
+def logout():
+    with db() as c: c.execute('DELETE FROM auth_sessions WHERE token_hash=?',(session_token_hash(session['auth_token']),))
+    session.clear(); return jsonify(ok=True)
+
+@app.get('/api/users')
+@protected(True)
+def list_users():
+    with db() as c:
+        users=[dict(r) for r in c.execute("SELECT u.name,u.role,COALESCE(a.disabled,0) AS disabled FROM users u LEFT JOIN user_access a ON a.name=u.name ORDER BY u.role,u.name")]
+    return jsonify(users=users)
+
+@app.post('/api/users')
+@protected(True)
+def manage_users():
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict): abort(400)
+    action=b.get('action');name=b.get('name');password=b.get('password','')
+    if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9_-]{2,40}',name): abort(400)
+    if action not in ('create','reset','disable','enable','revoke'): abort(400)
+    if action in ('create','reset') and (not isinstance(password,str) or not 12<=len(password)<=128):
+        return jsonify(error='비밀번호는 12~128자로 입력하세요.'),400
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        row=c.execute('SELECT role FROM users WHERE name=?',(name,)).fetchone()
+        if action=='create':
+            if row:return jsonify(error='이미 존재하는 아이디입니다.'),409
+            c.execute('INSERT INTO users VALUES(?,?,?)',(name,generate_password_hash(password),'viewer'))
+        else:
+            if not row:abort(404)
+            if row['role']!='viewer':return jsonify(error='관리자 계정은 이 화면에서 변경할 수 없습니다.'),403
+            if action=='reset':c.execute('UPDATE users SET password=? WHERE name=?',(generate_password_hash(password),name))
+            if action in ('disable','enable'):
+                c.execute('INSERT INTO user_access(name,disabled) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET disabled=excluded.disabled',(name,1 if action=='disable' else 0))
+            if action in ('reset','disable','revoke'):c.execute('DELETE FROM auth_sessions WHERE name=?',(name,))
+        log(c,{'create':'Reader 계정 생성','reset':'Reader 비밀번호 초기화','disable':'Reader 계정 중지','enable':'Reader 계정 활성화','revoke':'Reader 로그인 해제'}[action],name)
+    return jsonify(ok=True)
 
 # Only confirmed mastheads map to an issuer; ambiguous titles never infer one.
 MASTHEADS={

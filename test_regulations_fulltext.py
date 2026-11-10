@@ -16,11 +16,11 @@ class FullTextTests(unittest.TestCase):
   self.assertEqual(self.viewer.post('/api/regulations/save',json=payload,headers=self.vh).status_code,403)
   self.assertEqual(self.admin.post('/api/regulations/save',json=payload).status_code,403)
   self.assertEqual(self.admin.post('/api/regulations/save',json=payload,headers=self.h).status_code,200)
-  self.assertEqual(self.guest.get('/api/regulations/fulltexts').json['documents'][0]['body'],raw)
+  self.assertEqual(self.viewer.get('/api/regulations/fulltexts').json['documents'][0]['body'],raw)
   doc=self.admin.get('/api/regulations/document?category=agreement').json['document'];self.assertEqual(doc['body'],raw)
   self.assertEqual(self.admin.post('/api/regulations/save',json=payload,headers=self.h).status_code,409)
   self.assertEqual(self.admin.post('/api/regulations/delete',json={'category':'agreement','token':doc['token']},headers=self.h).status_code,200)
-  self.assertEqual(self.guest.get('/api/regulations/fulltexts').json['documents'],[])
+  self.assertEqual(self.viewer.get('/api/regulations/fulltexts').json['documents'],[])
  def test_plain_text_is_accepted(self):
   self.assertEqual(self.admin.post('/api/regulations/save',json={'category':'union_act','body':'형식 없는 본문\n원문 그대로','token':''},headers=self.h).status_code,200)
   with app.db() as c:self.assertEqual(c.execute("SELECT count(*) FROM regulation_articles").fetchone()[0],0)

@@ -24,13 +24,15 @@ class MobileCoreTests(unittest.TestCase):
     rh={'X-CSRF':reader.post('/api/login',json={'name':'reader','password':'password-12345'}).json['csrf']}
     assert reader.post('/api/schedule/event',json={},headers=rh).status_code==403
     assert reader.post('/api/manual-upload',data={'title':'x','files':(io.BytesIO(b'%PDF-1.4'),'x.pdf')},headers=rh).status_code==403
-    assert guest.get('/api/regulations/fulltexts').status_code==200
+    assert guest.get('/api/regulations/fulltexts').status_code==401
+    assert reader.get('/api/regulations/fulltexts').status_code==200
     assert reader.post('/api/logout',json={},headers=rh).status_code==200
     r=admin.post('/api/manual-upload',data={'title':'sample','files':(io.BytesIO(b'%PDF-1.4'),'x.pdf')},headers=ah)
     assert r.status_code==200, r.json
-    doc=guest.get('/api/documents').json[0]
+    doc=admin.get('/api/documents').json[0]
     assert doc['pages'][0]['is_pdf']
-    img=guest.get('/api/image/'+doc['pages'][0]['id']);assert img.status_code==200 and img.data.startswith(b'%PDF-')
+    assert guest.get('/api/image/'+doc['pages'][0]['id']).status_code==401
+    img=admin.get('/api/image/'+doc['pages'][0]['id']);assert img.status_code==200 and img.data.startswith(b'%PDF-')
     img.close()
     assert not any(x in sys.modules for x in ('ocr_engine','paddle_adapter','visual_grouping','schedule_extract'))
    ''')
