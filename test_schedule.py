@@ -42,6 +42,40 @@ class ScheduleTests(unittest.TestCase):
   self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,409)
   item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
   self.assertEqual((item['result'],item['result_note']),('잠정합의','다음 주 재논의'))
+ def test_team_member_can_select_each_schedule_kind(self):
+  with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
+  member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
+  body=dict(title='일정',row='1',start='2026-10-30',end='',status='예정',state='published')
+  kinds=['일정','교육','회의','교섭','행사','집회','기타']
+  for kind in kinds:self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':kind},headers=headers).status_code,200,kind)
+  self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':'임의'},headers=headers).status_code,403)
+  self.assertCountEqual([item['kind'] for item in self.guest.get('/api/schedule?month=2026-10').json['events']],kinds)
+ def test_category_override_roundtrip_and_reset(self):
+  created=self.save(title='안전 교육',category='meeting');self.assertEqual(created.status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];self.assertEqual(item['category'],'meeting')
+  self.assertEqual(self.save(id=item['id'],version=item['version'],title=item['title'],category='wrong').status_code,400)
+  self.assertEqual(self.save(id=item['id'],version=item['version'],title=item['title'],category='').status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];self.assertNotIn('category',item)
+ def test_calendar_day_order_is_shared_scoped_and_admin_only(self):
+  with app.db() as c:c.execute('DELETE FROM schedule_day_order')
+  ids=[self.save(title=title,start='2026-11-05',end='2026-11-05').json['id'] for title in ('가','나','다')]
+  request={'date':'2026-11-05','group':'pohang','ids':[ids[2],ids[0],ids[1]],'previous':[]}
+  self.assertEqual(self.guest.post('/api/schedule/day-order',json=request).status_code,401)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'group':'dangjin'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'date':'2026-11-06'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-11').json['day_orders']['2026-11-05|pohang'],request['ids'])
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'previous':request['ids'],'ids':ids},headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-10').json['day_orders'],{})
+ def test_combined_other_branch_day_order_preserves_original_rows(self):
+  with app.db() as c:c.execute('DELETE FROM schedule_day_order')
+  ids=[self.save(title=name,row=row,start='2026-11-05',end='2026-11-05').json['id'] for row,name in [('2','당진 일정'),('3','인천 일정'),('4','당냉 일정'),('5','순천 일정')]]
+  request={'date':'2026-11-05','group':'otherbranch','ids':ids[::-1],'previous':[]}
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,200)
+  result=self.guest.get('/api/schedule?month=2026-11').json
+  self.assertEqual(result['day_orders']['2026-11-05|otherbranch'],ids[::-1])
+  self.assertEqual({e['row'] for e in result['events']},{'2','3','4','5'})
  def test_dday_permissions_filter_and_preservation(self):
   with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
   member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}

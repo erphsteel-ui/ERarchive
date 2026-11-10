@@ -1,7 +1,7 @@
 """Run only after stopping the archive server; destination may be a shared folder."""
 from pathlib import Path
 import os,zipfile,datetime
-src=Path(os.environ.get('ARCHIVE_DATA',Path(__file__).parent/'data')).resolve()
+src=Path(os.environ.get('ERARCHIVE_DATA_DIR') or os.environ.get('ARCHIVE_DATA') or Path(__file__).parent/'data').resolve()
 if input('Stop the archive server first. Type STOPPED to continue: ')!='STOPPED':raise SystemExit('Cancelled')
 dest=Path(input('Backup folder path: ').strip()).resolve();dest.mkdir(parents=True,exist_ok=True)
 if dest==src or src in dest.parents:raise SystemExit('Choose a folder outside the data folder.')

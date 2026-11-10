@@ -3,7 +3,7 @@ const code=fs.readFileSync(__dirname+'/static/memos.js','utf8'),dialog={open:fal
 const context=vm.createContext({memoDialog:()=>dialog,memoEditing:null,memoGroups:['포항지회','비지회','민주노총','국회/외부','제보·미분류'],closeMemoDialog(){},$:id=>nodes[id]||(nodes[id]={elements:{organization:{}},querySelectorAll(){return []}}),esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))});
 vm.runInContext(code.slice(code.indexOf('function openMemoEditor(')),context);vm.runInContext('openMemoEditor({})',context);
 const names=[...dialog.innerHTML.matchAll(/name="([^"]+)"/g)].map(x=>x[1]);assert.deepEqual(names,['original','title','organization']);assert(!dialog.innerHTML.includes('수신일'));assert(!dialog.innerHTML.includes('출처'));
-const template=fs.readFileSync(__dirname+'/templates/index.html','utf8');assert(template.includes('<span class="archive-brand">ER 아카이브</span></div>'));
+const template=fs.readFileSync(__dirname+'/templates/index.html','utf8');assert(template.includes('<span class="archive-brand">노사 ER 통합 아카이브</span></div>'));
 const app=fs.readFileSync(__dirname+'/static/app.js','utf8');assert(app.includes("const categoryNames=['회사','집행부','제조직','계열사','그룹사','기타']"));
 console.log('PASS: three-field memo form, six publication categories and mint brand markup');
 const list=code.slice(code.indexOf('function renderMemos()'),code.indexOf('function memoDialog()'));

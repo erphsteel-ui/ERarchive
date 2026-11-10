@@ -7,7 +7,7 @@ _WAKE=threading.Event()
 _THREAD=None
 
 def group_pages(items,mode):
-    from visual_grouping import similarity
+    def similarity(*args): return 0
     groups=[]
     def family(name):return re.sub(r'_\d{1,3}$','',Path(name).stem)
     for item in items:
@@ -73,6 +73,7 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
     @app.post('/api/batches',endpoint='batch_upload')
     @a.protected(True)
     def upload():
+        return jsonify(error='수동 등록을 이용하세요.'),410
         files=request.files.getlist('files');mode=request.form.get('mode','auto')
         if not files or len(files)>20 or mode not in ('auto','single'):abort(400)
         entries=[];seen=set();total=0
@@ -117,7 +118,7 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
     @app.post('/api/batches/<bid>/regroup')
     @a.protected(True)
     def regroup(bid):
-        from visual_grouping import header_signature
+        def header_signature(*args): return None
         body=request.get_json() or {}
         with db() as c:
             b=c.execute('SELECT * FROM batches WHERE id=?',(bid,)).fetchone()
@@ -187,7 +188,7 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
             if p:c.execute("UPDATE batch_pages SET state='running' WHERE id=?",(p['id'],))
         if p:
             begin=time.monotonic()
-            try:r=a.recognize_body(DATA/'images'/p['path'])
+            try:r={'raw':'','variants':[{'text':''}],'regions':{},'status':'수동 입력'}
             except Exception as exc:r={'raw':'','variants':[],'regions':{},'status':'처리 실패 · '+str(exc)[:250]}
             with db() as c:
                 orgs=json.loads(c.execute("SELECT value FROM settings WHERE key='organizations'").fetchone()[0]);m=a.suggest(r.get('raw',''),orgs,r.get('regions',{}))
@@ -196,7 +197,7 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
         with db() as c:
             if not c.execute("SELECT 1 FROM batch_pages WHERE batch=? AND state IN ('queued','running')",(b['id'],)).fetchone():
                 items=[dict(p) for p in c.execute('SELECT id,name,meta,path FROM batch_pages WHERE batch=? ORDER BY position',(b['id'],))]
-                from visual_grouping import header_signature
+                def header_signature(*args): return None
                 for item in items:
                     item['meta']=json.loads(item['meta']);item['visual']=header_signature(DATA/'images'/item.pop('path'))
                 groups=group_pages(items,b['mode'])
@@ -204,7 +205,6 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
         return True
     def recover():
         if hasattr(a,'recover_schedule_jobs'):a.recover_schedule_jobs()
-        if hasattr(a,'recover_precision_jobs'):a.recover_precision_jobs()
         with db() as c:
             c.execute("UPDATE batch_pages SET state='queued' WHERE state='running'")
             c.execute("UPDATE batches SET state='queued' WHERE state='processing'")
@@ -218,7 +218,6 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
                 try:
                     worked=process_one()
                     if hasattr(a,'process_schedule_job'):worked=a.process_schedule_job() or worked
-                    if hasattr(a,'process_precision_job'):worked=a.process_precision_job() or worked
                     if worked:continue
                 except Exception:app.logger.exception('Batch queue error')
                 _WAKE.wait(3);_WAKE.clear()

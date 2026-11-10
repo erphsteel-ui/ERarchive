@@ -1,0 +1,22 @@
+{
+  "name": "ER 아카이브",
+  "short_name": "ERarchive",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#102940",
+  "theme_color": "#102940",
+  "icons": [
+    {
+      "src": "/static/logos/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/logos/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

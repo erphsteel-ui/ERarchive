@@ -9,7 +9,9 @@ import threading
 import time
 from pathlib import Path
 from flask import request, jsonify, abort, send_file
-from schedule_extract import hwp_text, extract_events, EXTRACTOR_VERSION
+EXTRACTOR_VERSION = 'manual'
+def hwp_text(raw): raise ValueError('자동 추출은 지원하지 않습니다.')
+def extract_events(*args): return []
 
 DEFAULT_ROWS=[{'id':str(i+1),'group':g,'name':n} for i,(g,n) in enumerate([
  ('당사','포항'),('당사','당진'),('당사','인천'),('당사','당냉'),('당사','순천'),
@@ -30,6 +32,7 @@ def install(a):
             id TEXT PRIMARY KEY,source TEXT REFERENCES schedule_sources(id),fingerprint TEXT UNIQUE,
             data TEXT,state TEXT,version INTEGER DEFAULT 1,created TEXT,updated TEXT);
         CREATE TABLE IF NOT EXISTS schedule_seen(id TEXT PRIMARY KEY,signature TEXT);
+        CREATE TABLE IF NOT EXISTS schedule_day_order(day TEXT NOT NULL,group_id TEXT NOT NULL,event_ids TEXT NOT NULL,PRIMARY KEY(day,group_id));
         CREATE TABLE IF NOT EXISTS schedule_reviews(source TEXT PRIMARY KEY REFERENCES schedule_sources(id) ON DELETE CASCADE,signature TEXT,updated TEXT);
         CREATE INDEX IF NOT EXISTS idx_schedule_events_state ON schedule_events(state);
         CREATE INDEX IF NOT EXISTS idx_schedule_events_source ON schedule_events(source);
@@ -39,7 +42,7 @@ def install(a):
         c.execute("INSERT OR IGNORE INTO settings VALUES('schedule_rows',?)",(json.dumps(DEFAULT_ROWS,ensure_ascii=False),))
         saved_rows=json.loads(c.execute("SELECT value FROM settings WHERE key='schedule_rows'").fetchone()[0])
         changed_rows=False
-        for group,name in [('당사','공통'),('당사','포항'),('당사','당진'),('당사','인천'),('그룹사','공통'),('계열사','공통'),('노동계','공통'),('기타','기타')]:
+        for group,name in [('당사','공통'),('당사','포항'),('당사','당진'),('당사','인천'),('당사','당냉'),('당사','순천'),('그룹사','공통'),('계열사','공통'),('노동계','공통'),('기타','기타')]:
             if not any(r['group']==group and r['name']==name for r in saved_rows):
                 saved_rows.append({'id':'calendar-'+secrets.token_hex(4),'group':group,'name':name});changed_rows=True
         if changed_rows:c.execute("UPDATE settings SET value=? WHERE key='schedule_rows'",(json.dumps(saved_rows,ensure_ascii=False),))
@@ -93,6 +96,7 @@ def install(a):
             for p in proposals:
                 if p['start'] in protected_dates or event_key(p) in keys:continue
                 p['automatic']=True
+                if kind=='memo' and source_id.startswith('memo:'):p['memo_id']=source_id[5:]
                 subject=p.get('subject','')
                 hits=[r for r in row_list if subject and r['name']!='기타' and r['name'] in subject]
                 # A generic metal-union publisher does not imply its own calendar row.
@@ -110,10 +114,10 @@ def install(a):
             c.execute('INSERT OR REPLACE INTO schedule_seen VALUES(?,?)',(source_id,signature))
         return count
     def scan():
+        return
         if not lock.acquire(blocking=False):return
         try:
-            if hasattr(a,'scan_schedule_inbox'):a.scan_schedule_inbox()
-            if hasattr(a,'scan_precision_inbox'):a.scan_precision_inbox()
+            if not a.DISABLE_FOLDER_WATCHERS and hasattr(a,'scan_schedule_inbox'):a.scan_schedule_inbox()
             errors=[];count=0
             # Already-recognized images: no additional OCR pass or model load.
             with a.db() as c:
@@ -133,7 +137,7 @@ def install(a):
             for p in images:
                 meta=json.loads(p['meta']);name=p.get('name') or meta.get('title') or p['path']
                 count+=ingest('image:'+p['hash'],name,'image',p['text'],reference=meta.get('date',''))
-            if cfg['enabled']:
+            if cfg['enabled'] and not a.DISABLE_FOLDER_WATCHERS:
                 folder=Path(cfg['path'])
                 if not folder.is_dir():errors.append('HWP 수집폴더에 연결할 수 없습니다.')
                 else:
@@ -194,7 +198,8 @@ def install(a):
             source_meta={r['id']:dict(r) for r in c.execute('SELECT id,name,kind FROM schedule_sources')}
             for e in all_events:
                 src=source_meta.get(e['source'],{});e['source_name']=src.get('name','');e['source_kind']=src.get('kind','')
-            result={'rows':rows(c),'events':visible,'month':month}
+            day_orders={r['day']+'|'+r['group_id']:json.loads(r['event_ids']) for r in c.execute('SELECT * FROM schedule_day_order WHERE day BETWEEN ? AND ?',(first.isoformat(),last.isoformat()))}
+            result={'rows':rows(c),'events':visible,'month':month,'day_orders':day_orders}
             if admin:
                 pending=[e for e in all_events if e['state']=='pending']
                 published=[e for e in all_events if e['state']=='published']
@@ -287,6 +292,7 @@ def install(a):
             row=c.execute('SELECT * FROM schedule_sources WHERE id=?',(sid,)).fetchone()
             if not row:abort(404)
             if request.args.get('download')=='1':
+                if row['kind']=='memo':return a.app.response_class(row['text'],mimetype='text/plain; charset=utf-8')
                 if row['kind']=='hwp':return send_file(a.DATA/'schedule_sources'/row['path'],as_attachment=True,download_name=row['name'])
                 if row['path'] and (a.DATA/'schedule_sources'/row['path']).is_file():return send_file(a.DATA/'schedule_sources'/row['path'])
                 digest=sid.split(':',1)[1]
@@ -310,14 +316,45 @@ def install(a):
             if not used.issubset(ids):return jsonify(error='일정이 있는 행은 삭제할 수 없습니다. 해당 일정을 다른 행으로 옮겨 주세요.'),400
             c.execute("UPDATE settings SET value=? WHERE key='schedule_rows'",(json.dumps(items,ensure_ascii=False),));a.log(c,'일정표 조직 행 변경')
         return jsonify(ok=True)
+    @a.app.post('/api/schedule/day-order')
+    @a.protected(True)
+    def schedule_day_order():
+        b=request.get_json(silent=True)
+        if not isinstance(b,dict):abort(400)
+        day=b.get('date');group=b.get('group');items=b.get('ids');previous=b.get('previous')
+        if not isinstance(day,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or group not in ('common','pohang','otherbranch','dangjin','incheon','group','affiliate','labor','other'):abort(400)
+        try:dt.date.fromisoformat(day)
+        except ValueError:abort(400)
+        if not isinstance(items,list) or not 1<=len(items)<=500 or any(not isinstance(x,str) or len(x)>100 for x in items) or len(set(items))!=len(items):abort(400)
+        if not isinstance(previous,list) or len(previous)>500 or any(not isinstance(x,str) or len(x)>100 for x in previous):abort(400)
+        with a.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            stored=c.execute('SELECT event_ids FROM schedule_day_order WHERE day=? AND group_id=?',(day,group)).fetchone()
+            if (json.loads(stored['event_ids']) if stored else [])!=previous:abort(409)
+            def group_for(row):
+                if row['group']=='당사':
+                    if row['name'] in ('당진','인천','당냉','순천'):
+                        if group in ('dangjin','incheon'):return {'당진':'dangjin','인천':'incheon'}.get(row['name'],'otherbranch')
+                        return 'otherbranch'
+                    return {'포항':'pohang'}.get(row['name'],'common')
+                return {'그룹사':'group','계열사':'affiliate','노동계':'labor'}.get(row['group'],'other')
+            valid_rows={r['id'] for r in rows(c) if group_for(r)==group}
+            for eid in items:
+                row=c.execute("SELECT data FROM schedule_events WHERE id=? AND state='published'",(eid,)).fetchone()
+                if not row:abort(409)
+                event_data=json.loads(row['data'])
+                if event_data.get('row') not in valid_rows or not event_data.get('start','')<=day<=event_data.get('end',''):abort(409)
+            c.execute('INSERT INTO schedule_day_order(day,group_id,event_ids) VALUES(?,?,?) ON CONFLICT(day,group_id) DO UPDATE SET event_ids=excluded.event_ids',(day,group,json.dumps(items)))
+            a.log(c,'일정 표시 순서 변경',day+' '+group)
+        return jsonify(ok=True)
     @a.app.post('/api/schedule/event')
-    @a.protected()
+    @a.protected(True)
     def schedule_save_event():
         b=request.get_json()
         if not isinstance(b,dict):abort(400)
         if a.current_role()!='admin':
-            if set(b)-{'title','row','start','end','kind','status','state','dday'} or b.get('state')!='published':abort(403)
-            if b.get('kind')!='일정' or b.get('status')!='예정':abort(403)
+            if set(b)-{'title','row','start','end','kind','category','status','state','dday'} or b.get('state')!='published':abort(403)
+            if b.get('kind') not in ('일정','교육','회의','교섭','행사','집회','기타') or b.get('status')!='예정':abort(403)
         if b.get('source') is not None and not isinstance(b.get('source'),str):abort(400)
         state=b.get('state');eid=b.get('id') or secrets.token_hex(12)
         if state not in ('pending','published','rejected'):abort(400)
@@ -326,6 +363,10 @@ def install(a):
             if b.get('id') and not old:abort(404)
             if old and b.get('version')!=old['version']:abort(409)
             data=json.loads(old['data']) if old else {'quote':'','warnings':[]}
+            if 'category' in b:
+                if b['category'] not in ('','issue','meeting','safety-legal','event-edu','etc'):abort(400)
+                if b['category']:data['category']=b['category']
+                else:data.pop('category',None)
             if 'dday' in b:
                 if type(b['dday']) is not bool:abort(400)
                 data['dday']=b['dday']
@@ -346,9 +387,6 @@ def install(a):
                 valid={r['id'] for r in rows(c)}
                 if data['row'] and data['row'] not in valid:abort(400)
                 if state=='published' and data['row'] not in valid:return jsonify(error='일정표에 표시할 사업장·조직을 선택하세요.'),400
-            if b.get('memo_id'):
-                if not isinstance(b['memo_id'],str) or not c.execute('SELECT 1 FROM trend_memos WHERE id=? AND archived=0',(b['memo_id'],)).fetchone():abort(400)
-                data['memo_id']=b['memo_id']
             data['reviewed']=True
             if not old and b.get('source') and not c.execute('SELECT 1 FROM schedule_sources WHERE id=?',(b['source'],)).fetchone():abort(404)
             if old:c.execute('UPDATE schedule_events SET data=?,state=?,version=version+1,updated=? WHERE id=?',(json.dumps(data,ensure_ascii=False),state,a.stamp(),eid))

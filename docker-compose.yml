@@ -1,0 +1,15 @@
+services:
+  erarchive:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      ERARCHIVE_DATA_DIR: /app/data
+      ERARCHIVE_REQUIRE_VOLUME: "1"
+      ERARCHIVE_DISABLE_FOLDER_WATCHERS: "1"
+      PORT: "8000"
+      COOKIE_SECURE: "1"
+      LAW_API_OC: ${LAW_API_OC:-}
+    volumes:
+      - ./data:/app/data

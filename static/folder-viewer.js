@@ -3,7 +3,6 @@ let readerZoom=1;
 function resetReaderView(){readerZoom=1;$('#detailDialog').classList.remove('info-visible');$('#readerInfoToggle').setAttribute('aria-expanded','false');$('#pageImage').style.width='';$('#pageImage').style.height='';$('#pageImageSecond').style.width='';$('#pageImageSecond').style.height='';$('#imageWrap').classList.remove('reader-zoomed');$('#imageWrap').scrollTop=0;$('#imageWrap').scrollLeft=0;$('#readerZoomLabel').textContent='전체 맞춤';}
 function setReaderZoom(value){readerZoom=Math.max(1,Math.min(4,value));applyReaderZoom();}
 function applyReaderZoom(){
- if(user?.role==='admin')return;
  const img=$('#pageImage'),wrap=$('#imageWrap');if(!img.naturalWidth||!wrap.clientWidth||!wrap.clientHeight)return;
  wrap.classList.toggle('reader-zoomed',readerZoom>1);
  if(readerZoom===1){img.style.width='';img.style.height='';wrap.scrollTop=0;wrap.scrollLeft=0;}

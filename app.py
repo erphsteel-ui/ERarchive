@@ -1,13 +1,28 @@
-from ocr_engine import recognize_body
 import tempfile
-import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time
+import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time, ipaddress
 from pathlib import Path
 from functools import wraps
 from flask import Flask, request, session, jsonify, send_file, render_template, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image, ImageOps, UnidentifiedImageError
 ROOT = Path(__file__).resolve().parent
-DATA = Path(os.environ.get('ARCHIVE_DATA', ROOT / 'data')).resolve()
+# Keep the legacy variable compatible while preferring the cloud data path.
+DATA = Path(os.environ.get('ERARCHIVE_DATA_DIR') or os.environ.get('ARCHIVE_DATA') or ROOT / 'data').resolve()
+def is_mount_point(path):
+    # os.path.ismount alone cannot identify same-filesystem bind mounts.
+    try:
+        with open('/proc/self/mountinfo', encoding='utf-8') as mountinfo:
+            for line in mountinfo:
+                mount_path=line.split()[4]
+                mount_path=re.sub(r'\\([0-7]{3})', lambda match: chr(int(match.group(1),8)), mount_path)
+                if mount_path == str(path): return True
+    except (OSError, IndexError):
+        pass
+    return os.path.ismount(path)
+
+if os.environ.get('ERARCHIVE_REQUIRE_VOLUME') == '1' and not is_mount_point(DATA):
+    raise SystemExit(f'Persistent volume is not mounted at {DATA}; refusing to start.')
+DISABLE_FOLDER_WATCHERS = os.environ.get('ERARCHIVE_DISABLE_FOLDER_WATCHERS') == '1'
 DATA.mkdir(parents=True, exist_ok=True)
 (DATA / 'images').mkdir(exist_ok=True)
 key = DATA / 'secret.key'
@@ -50,21 +65,82 @@ init()
 def stamp(): return datetime.datetime.now().astimezone().isoformat(timespec='seconds')
 def log(c, action, doc=''):
     c.execute('INSERT INTO audit(time,actor,action,doc) VALUES(?,?,?,?)',(stamp(),session.get('user','CLI'),action,doc))
-def protected(admin=False):
+def protected(admin=False, reader_write=False):
     def dec(fn):
         @wraps(fn)
         def wrap(*a,**kw):
             with db() as c: u=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
             if not u and (admin or request.method not in ('GET','HEAD')): abort(401)
-            if admin and u['role']!='admin': abort(403)
+            if (admin or (request.method not in ('GET','HEAD') and not reader_write)) and u['role']!='admin': abort(403)
             if request.method not in ('GET','HEAD') and not secrets.compare_digest(request.headers.get('X-CSRF',''),session.get('csrf','invalid')): abort(403)
             return fn(*a,**kw)
         return wrap
     return dec
+def normalized_client_ip(value):
+    try:
+        address=ipaddress.ip_address(value or '')
+        if isinstance(address,ipaddress.IPv6Address) and address.ipv4_mapped:address=address.ipv4_mapped
+        return address
+    except ValueError:return None
+
+def viewer_ip_allowed(c,client):
+    if client is None:return False
+    if client.is_loopback:return True
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+    try:allowed=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):return False
+    return isinstance(allowed,list) and str(client) in allowed
+
+def viewer_ip_restriction_enabled(c):
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_restriction_enabled'").fetchone()
+    return bool(row and row[0]=='1')
+
+@app.before_request
+def restrict_viewer_api():
+    # Use the connection peer, never untrusted forwarding headers.
+    if not request.path.startswith('/api/') or request.path in ('/api/login','/api/logout'):return
+    client=normalized_client_ip(request.remote_addr)
+    with db() as c:
+        if not viewer_ip_restriction_enabled(c):return
+        user=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
+        if user and user['role']=='admin':return
+        if viewer_ip_allowed(c,client):return
+    return jsonify(error='이 PC는 일반 열람 허용 IP에 등록되어 있지 않습니다. 관리자에게 문의하세요.'),403
+
+@app.get('/api/viewer-ips')
+@protected(True)
+def get_viewer_ips():
+    with db() as c:
+        row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+        enabled=viewer_ip_restriction_enabled(c)
+    try:addresses=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):addresses=[]
+    return jsonify(addresses=addresses,enabled=enabled,client_ip=str(normalized_client_ip(request.remote_addr) or ''))
+
+@app.post('/api/viewer-ips')
+@protected(True)
+def save_viewer_ips():
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict) or not isinstance(b.get('addresses'),list) or len(b['addresses'])>256:abort(400)
+    if 'enabled' in b and type(b['enabled']) is not bool:abort(400)
+    addresses=[]
+    for item in b['addresses']:
+        if not isinstance(item,str) or len(item)>45:abort(400)
+        address=normalized_client_ip(item.strip())
+        if address is None or address.is_unspecified or address.is_multicast:return jsonify(error='올바른 개별 IP 주소를 한 줄에 하나씩 입력하세요.'),400
+        value=str(address)
+        if value not in addresses:addresses.append(value)
+    with db() as c:
+        enabled=b.get('enabled',viewer_ip_restriction_enabled(c))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_allowlist',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(addresses),))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_restriction_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",('1' if enabled else '0',))
+        log(c,'일반 열람 IP 설정 변경',('제한 사용' if enabled else '제한 해제')+', '+str(len(addresses))+'개')
+    return jsonify(ok=True,count=len(addresses),enabled=enabled)
+
 @app.after_request
 def headers(r):
-    r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='DENY'
-    r.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' blob: https://logo.clearbit.com https://www.google.com; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='SAMEORIGIN'
+    r.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' blob: https://logo.clearbit.com https://www.google.com; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'"
     return r
 @app.errorhandler(400)
 @app.errorhandler(401)
@@ -75,6 +151,11 @@ def headers(r):
 def error(e): return jsonify(error={400:'입력값 또는 이미지 형식을 확인하세요.',401:'로그인이 필요합니다.',403:'접근 권한 또는 요청 인증을 확인하세요.',404:'자료를 찾을 수 없습니다.',409:'중복 자료 또는 다른 창의 수정 내역이 있습니다. 새로고침하세요.',413:'한 번에 60MB 이하로 올려주세요.'}.get(e.code,'오류')), e.code
 @app.get('/')
 def index(): return render_template('index.html')
+
+@app.get('/healthz')
+def healthz():
+    with db() as c: c.execute('SELECT 1').fetchone()
+    return 'ok', 200, {'Content-Type':'text/plain; charset=utf-8'}
 @app.post('/api/login')
 def login():
     # Cross-origin JSON POST is not permitted; no CORS enabled.
@@ -117,19 +198,8 @@ def current_role():
         u=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
     return u['role'] if u else 'viewer'
 @app.post('/api/logout')
-@protected()
+@protected(reader_write=True)
 def logout(): session.clear(); return jsonify(ok=True)
-
-def ocr(path, psm=3):
-    exe=os.environ.get('TESSERACT_CMD') or shutil.which('tesseract')
-    if not exe: return '', 'OCR 미설치 · 직접 입력 가능'
-    try:
-        langs=subprocess.run([exe,'--list-langs'],capture_output=True,text=True,timeout=10)
-        if 'kor' not in langs.stdout.split(): return '', '한국어 OCR 데이터 미설치 · 직접 입력 가능'
-        r=subprocess.run([exe,str(path),'stdout','-l','kor+eng','--psm',str(psm)],capture_output=True,timeout=90)
-        if r.returncode: return '', 'OCR 실패 · 원본은 보관됨'
-        return r.stdout.decode('utf-8',errors='replace').strip(), 'OCR 완료 · 내용 확인 필요'
-    except (OSError,subprocess.TimeoutExpired): return '', 'OCR 실행 실패 · 직접 입력 가능'
 
 # Only confirmed mastheads map to an issuer; ambiguous titles never infer one.
 MASTHEADS={
@@ -138,29 +208,6 @@ MASTHEADS={
     '쟁의대책위 속보':None,
     '연대 홍보물':None,
 }
-def tesseract_header_ocr(path):
-    # Separate masthead, large central title and small left publisher typography.
-    results={}
-    try:
-        with Image.open(path) as source, tempfile.TemporaryDirectory(prefix='er-header-') as tmp:
-            im=ImageOps.exif_transpose(source).convert('RGB'); w,h=im.size
-            regions=[('header',(0,0,w,max(1,round(h*.25))),3),
-                     ('title',(round(w*.17),0,round(w*.81),max(1,round(h*.11))),7),
-                     ('issuer',(0,0,max(1,round(w*.18)),max(1,round(h*.115))),11)]
-            for name,box,psm in regions:
-                crop=ImageOps.autocontrast(ImageOps.grayscale(im.crop(box)))
-                scale=min(3,2200/max(crop.size))
-                crop=crop.resize((max(1,round(crop.width*scale)),max(1,round(crop.height*scale))),Image.Resampling.LANCZOS)
-                crop=ImageOps.expand(crop,border=20,fill=255)
-                path_out=Path(tmp)/(name+'.png');crop.save(path_out)
-                results[name]=ocr(path_out,psm)[0]
-        return results
-    except (OSError,ValueError): return results
-
-def header_ocr(path):
-    result=recognize_body(path)
-    return result.get('regions',{})
-
 def normalized_issuer(value):
     value=re.sub(r'\s','',value)
     return value.replace('전국금속노동조합','금속노조')
@@ -215,54 +262,52 @@ def set_settings():
     if not isinstance(orgs,list) or len(orgs)>300 or any(not isinstance(o,str) or len(o)>100 for o in orgs): abort(400)
     with db() as c: c.execute("UPDATE settings SET value=? WHERE key='organizations'",(json.dumps(orgs,ensure_ascii=False),)); log(c,'조직 명부 변경')
     return jsonify(ok=True)
-@app.post('/api/upload')
+CATEGORIES=('회사','집행부','제조직','계열사','그룹사','기타')
+@app.post('/api/manual-upload')
 @protected(True)
-def upload():
+def manual_upload():
     files=request.files.getlist('files')
-    if not files or len(files)>20: abort(400)
-    entries=[]; seen=set()
+    title=request.form.get('title','').strip()
+    if not title or len(title)>5000 or not files or len(files)>20: abort(400)
+    category=request.form.get('category','')
+    if category not in ('',)+CATEGORIES: abort(400)
+    date=request.form.get('date','')
+    if date:
+        try: datetime.date.fromisoformat(date)
+        except ValueError: abort(400)
+    entries=[]; seen=set(); total=0
     for f in files:
-        raw=f.read()
-        if len(raw)>15*1024*1024: abort(413)
+        raw=f.read(15*1024*1024+1); total+=len(raw)
+        if len(raw)>15*1024*1024 or total>60*1024*1024: abort(413)
         digest=hashlib.sha256(raw).hexdigest()
-        if digest in seen: return jsonify(error='선택한 파일 안에 같은 이미지가 있습니다.'),409
+        if digest in seen: abort(409)
         seen.add(digest)
-        try:
-            im=Image.open(io.BytesIO(raw)); fmt=im.format
-            if fmt not in ('JPEG','PNG','WEBP') or im.width*im.height>40000000: abort(400)
-            im.verify()
-        except (UnidentifiedImageError,OSError,Image.DecompressionBombError): abort(400)
-        entries.append((raw,digest,{'JPEG':'.jpg','PNG':'.png','WEBP':'.webp'}[fmt]))
-    with db() as c:
-        for _,digest,_ in entries:
-            row=c.execute('SELECT doc FROM pages WHERE hash=? UNION ALL SELECT batch FROM batch_pages WHERE hash=? UNION ALL SELECT NULL FROM file_imports WHERE hash=?',(digest,digest,digest)).fetchone()
-            if row: return jsonify(error='이미 등록한 원본입니다. 기존 자료를 확인하세요.',document_id=row[0]),409
-    did=secrets.token_hex(12); stored=[]; created=[]; reports=[]
+        if raw.startswith(b'%PDF-'): ext='.pdf'
+        else:
+            try:
+                im=Image.open(io.BytesIO(raw)); fmt=im.format
+                if fmt not in ('JPEG','PNG','WEBP') or im.width*im.height>40000000: abort(400)
+                im.verify(); ext={'JPEG':'.jpg','PNG':'.png','WEBP':'.webp'}[fmt]
+            except (UnidentifiedImageError,OSError,Image.DecompressionBombError): abort(400)
+        entries.append((raw,digest,ext))
+    did=secrets.token_hex(12); created=[]
+    meta=dict(title=title,date=date,issue='',kind='홍보물',note='',state='published',category=category,publishers=[x.strip() for x in request.form.get('publishers','').split(',') if x.strip()],tags=[])
     try:
-        for n,(raw,digest,ext) in enumerate(entries):
-            pid=secrets.token_hex(12); path=DATA/'images'/(pid+ext); path.write_bytes(raw); created.append(path)
-            result=recognize_body(path);text=result['variants'][result['selected']]['text'] if result['variants'] else '';status=result['status'];stored.append((pid,did,path.name,digest,text,status,n));reports.append((pid,result))
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
-            for entry in entries:
-                if c.execute('SELECT 1 FROM file_imports WHERE hash=?',(entry[1],)).fetchone():abort(409)
-            orgs=json.loads(c.execute("SELECT value FROM settings WHERE key='organizations'").fetchone()[0]); meta=suggest('\n'.join(p[4] for p in stored),orgs,reports[0][1].get('regions',{}))
-            meta['title']=meta['title'] or '제목 확인 필요'; c.execute('INSERT INTO documents VALUES(?,?,?,?,1)',(did,json.dumps(meta,ensure_ascii=False),stamp(),stamp()))
-            c.executemany('INSERT INTO pages VALUES(?,?,?,?,?,?,?)',stored)
-            c.executemany('INSERT OR IGNORE INTO file_imports VALUES(?,?)',[(p[3],stamp()) for p in stored])
-            for pid,result in reports:
-                c.execute('INSERT INTO page_original VALUES(?,?,?)',(pid,result['raw'],'업로드 최초 OCR'))
-                c.execute('INSERT INTO ocr_runs VALUES(?,?,?,?,?)',(secrets.token_hex(12),pid,1,json.dumps(result,ensure_ascii=False),stamp()))
-            log(c,'이미지 업로드',did)
-    except sqlite3.IntegrityError:
-        for p in created: p.unlink(missing_ok=True)
-        abort(409)
-    except Exception:
-        for p in created: p.unlink(missing_ok=True)
+            for _,digest,_ in entries:
+                if c.execute('SELECT 1 FROM file_imports WHERE hash=? UNION ALL SELECT 1 FROM pages WHERE hash=?',(digest,digest)).fetchone(): abort(409)
+            c.execute('INSERT INTO documents VALUES(?,?,?,?,1)',(did,json.dumps(meta,ensure_ascii=False),stamp(),stamp()))
+            for n,(raw,digest,ext) in enumerate(entries):
+                pid=secrets.token_hex(12); path=DATA/'images'/(pid+ext);path.write_bytes(raw);created.append(path)
+                c.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?)',(pid,did,path.name,digest,'','수동 등록',n))
+                c.execute('INSERT INTO file_imports VALUES(?,?)',(digest,stamp()))
+            log(c,'홍보물 수동 등록',did)
+    except BaseException:
+        for path in created:path.unlink(missing_ok=True)
         raise
     return jsonify(id=did)
 
-CATEGORIES=('회사','집행부','제조직','계열사','그룹사','기타')
 def categories_for(d):
     if d.get('category') in CATEGORIES: return [d['category']]
     result=[]
@@ -289,8 +334,8 @@ def documents():
     with db() as c:
         role=current_role()
         page_map={}
-        for p in c.execute('SELECT doc,id,text,status,position FROM pages ORDER BY doc,position'):
-            page=dict(p);doc=page.pop('doc');page_map.setdefault(doc,[]).append(page)
+        for p in c.execute('SELECT doc,id,text,status,position,path FROM pages ORDER BY doc,position'):
+            page=dict(p);doc=page.pop('doc');page['is_pdf']=page.pop('path').lower().endswith('.pdf');page_map.setdefault(doc,[]).append(page)
         ds=[document(c,r,page_map.get(r['id'],[])) for r in c.execute('SELECT * FROM documents ORDER BY created DESC')]
     visible=[d for d in ds if role=='admin' or d['state']=='published']
     if role!='admin':
@@ -310,6 +355,7 @@ def thumbnail_file(pid):
     with db() as c:
         r=c.execute('SELECT p.path,p.hash,d.meta FROM pages p JOIN documents d ON d.id=p.doc WHERE p.id=?',(pid,)).fetchone()
     if not r or (json.loads(r['meta'])['state']!='published' and current_role()!='admin'):abort(404)
+    if Path(r['path']).suffix.lower()=='.pdf': return send_file(ROOT/'static'/'pdf-placeholder.svg',mimetype='image/svg+xml')
     size=request.args.get('size','small')
     if size not in ('small','card'):abort(400)
     folder=DATA/'thumbnails';folder.mkdir(exist_ok=True)
@@ -405,14 +451,7 @@ def page_ocr(pid):
     b=request.get_json() or {}
     if b.get('version')!=row['version']: abort(409)
     if b.get('layout','auto') not in ('auto','columns'): abort(400)
-    result=recognize_body(DATA/'images'/row['path'],b.get('layout','auto'))
-    with db() as c:
-        current=c.execute('SELECT d.version FROM documents d JOIN pages p ON p.doc=d.id WHERE p.id=?',(pid,)).fetchone()
-        if not current or current['version']!=row['version']: abort(409)
-        run_id=secrets.token_hex(12)
-        c.execute('INSERT INTO ocr_runs VALUES(?,?,?,?,?)',(run_id,pid,row['version'],json.dumps(result,ensure_ascii=False),stamp()))
-        log(c,'본문 재인식 미리보기',row['doc'])
-    return jsonify(run_id=run_id,result=result,version=row['version'])
+    return jsonify(error='자동 인식은 지원하지 않습니다.'),410
 
 @app.get('/api/ocr-runs/<rid>/crop/<int:variant>/<int:word>')
 @protected(True)
@@ -436,10 +475,7 @@ def recognize(did):
         if not rows: abort(404)
         orgs=json.loads(c.execute("SELECT value FROM settings WHERE key='organizations'").fetchone()[0])
         run=c.execute('SELECT result FROM ocr_runs WHERE page=? ORDER BY rowid DESC LIMIT 1',(rows[0]['id'],)).fetchone()
-    regions=json.loads(run[0]).get('regions',{}) if run else header_ocr(DATA/'images'/rows[0]['path'])
-    result=suggest('\n'.join(r['text'] for r in rows),orgs,regions)
-    # Preview only: this never overwrites saved metadata or publication state.
-    return jsonify(title=result['title'],publishers=result['publishers'],reason=result['classification_reason'])
+    return jsonify(error='자동 인식은 지원하지 않습니다.'),410
 
 @app.post('/api/documents/<did>/split')
 @protected(True)
@@ -488,10 +524,12 @@ import steel_press
 steel_press.install(sys.modules[__name__])
 import news
 news.install(sys.modules[__name__])
-import memos
-memos.install(sys.modules[__name__])
 import regulations
 regulations.install(sys.modules[__name__])
+import occasions
+occasions.install(sys.modules[__name__])
+import training_export
+training_export.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import
@@ -500,22 +538,32 @@ import schedule
 start_schedule=schedule.install(sys.modules[__name__])
 import schedule_intake
 schedule_intake.install(sys.modules[__name__])
-import precision
-precision.install(sys.modules[__name__])
 import auto_sync
 start_auto_sync=auto_sync.install(sys.modules[__name__])
 
+def ensure_admin():
+    # Bootstrap the first admin once, and never overwrite a pre-existing account.
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        if c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone(): return
+        name=os.environ.get('ERARCHIVE_ADMIN_USER','').strip()
+        password=os.environ.get('ERARCHIVE_ADMIN_PASSWORD','')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{2,40}',name) or not 12<=len(password)<=128:
+            raise SystemExit('Create an admin with --user, or set ERARCHIVE_ADMIN_USER and ERARCHIVE_ADMIN_PASSWORD (12-128 characters).')
+        if c.execute('SELECT 1 FROM users WHERE name=?',(name,)).fetchone():
+            raise SystemExit('The initial admin name is already in use; choose a different name.')
+        c.execute('INSERT INTO users VALUES(?,?,?)',(name,generate_password_hash(password),'admin'))
+
 def main():
     import argparse,getpass
-    p=argparse.ArgumentParser();p.add_argument('--user');p.add_argument('--role',choices=['admin','viewer'],default='viewer');p.add_argument('--startup-sync',action='store_true');p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8080);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--user');p.add_argument('--role',choices=['admin','viewer'],default='viewer');p.add_argument('--startup-sync',action='store_true');p.add_argument('--host',default='0.0.0.0');p.add_argument('--port',type=int,default=os.environ.get('PORT','8000'));a=p.parse_args()
     if a.user:
         pw=getpass.getpass('Password (12+ characters): ')
         if len(pw)<12: raise SystemExit('Password must be 12+ characters')
         if pw!=getpass.getpass('Confirm password: '): raise SystemExit('Passwords differ')
         with db() as c: c.execute('INSERT OR REPLACE INTO users VALUES(?,?,?)',(a.user,generate_password_hash(pw),a.role))
         print('Account saved');return
-    with db() as c:
-        if not c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone(): raise SystemExit('Create admin first: python app.py --user admin --role admin')
+    ensure_admin()
     # Only one server may own this data directory and its durable OCR queue.
     server_lock=open(DATA/'server.lock','a+b')
     try:
@@ -529,9 +577,8 @@ def main():
     except OSError:raise SystemExit('Archive is already running with this data folder. Close the other server first.')
     from waitress import create_server
     server=create_server(app,host=a.host,port=a.port,threads=6,max_request_body_size=65*1024*1024)
-    start_batches()
-    start_folder_import()
-    start_schedule()
+    # Automatic extraction and local folder polling are disabled in the lightweight version.
+    # Existing records and queued files remain in the data directory.
     if a.startup_sync:start_auto_sync()
     print(f'Archive: http://{a.host}:{a.port}');server.run()
 if __name__=='__main__': main()

@@ -11,6 +11,10 @@ class RuleTests(unittest.TestCase):
    with self.subTest(title=title):self.assertEqual(classify(title)[0],'keep')
   for title in EXCLUDE:
    with self.subTest(title=title):self.assertEqual(classify(title,'현대제철 공장도 기사에 언급됐다')[0],'exclude')
+ def test_requested_steel_outlook_examples(self):
+  titles=['충남·당진환경련 "현대제철 태양광 가동 환영"','"PBR 0.19배" 현대제철, 철강업 불황이 부른 저평가[저PBR 기업분석①]','중국발 저가 공습과 내수 절벽…벼랑 끝 철강·석화 현주소']
+  for title in titles:
+   with self.subTest(title=title):self.assertEqual(classify(title)[0],'keep')
  def test_structural_changes_not_rescue_noise(self):
   self.assertEqual(classify('현대제철 구조조정과 고용 협의')[0],'keep')
   self.assertEqual(classify('현대제철·폴리텍 채용 인력 양성 협약')[0],'review')
