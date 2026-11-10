@@ -37,6 +37,12 @@ class CloudDeployTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT name FROM users WHERE role=?', ('admin',)).fetchall(), [('first',)])
         self.assertFalse(Path(legacy).exists())
 
+    def test_initial_admin_accepts_eight_characters_and_rejects_seven(self):
+        too_short = self.run_app('import app; app.ensure_admin()', ERARCHIVE_DATA_DIR=str(self.root / 'short'), ERARCHIVE_ADMIN_USER='admin', ERARCHIVE_ADMIN_PASSWORD='1234567')
+        self.assertNotEqual(too_short.returncode, 0)
+        valid = self.run_app('import app; app.ensure_admin()', ERARCHIVE_DATA_DIR=str(self.root / 'valid'), ERARCHIVE_ADMIN_USER='admin', ERARCHIVE_ADMIN_PASSWORD='12345678')
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+
     def test_required_volume_fails_before_creating_database(self):
         data = str(self.root / 'not-a-mount')
         result = self.run_app('import app', ERARCHIVE_DATA_DIR=data, ERARCHIVE_REQUIRE_VOLUME='1')

@@ -48,6 +48,30 @@ class AuthAccessTests(unittest.TestCase):
     assert reader.post('/api/login',json={'name':'reader1','password':'new-password-123'}).status_code==200
     assert admin.post('/api/users',json={'action':'revoke','name':'reader1'},headers=ah).status_code==200
     assert reader.get('/api/me').status_code==401
+    # An eight-character password is accepted; shorter values are rejected.
+    assert admin.post('/api/users',json={'action':'create','name':'reader8','password':'1234567'},headers=ah).status_code==400
+    assert admin.post('/api/users',json={'action':'create','name':'reader8','password':'12345678'},headers=ah).status_code==200
+    victim=app.app.test_client();login=victim.post('/api/login',json={'name':'reader8','password':'12345678'});assert login.status_code==200
+    vh={'X-CSRF':login.json['csrf']}
+    assert victim.post('/api/change-password',json={'current':'12345678','new':'1234567'},headers=vh).status_code==400
+    assert victim.post('/api/change-password',json={'current':'12345678','new':'abcdefgh'},headers=vh).status_code==200
+    assert victim.post('/api/users',json={'action':'delete','name':'reader2'},headers=vh).status_code==403
+    assert admin.post('/api/users',json={'action':'delete','name':'admin'},headers=ah).status_code==403
+    assert admin.post('/api/users',json={'action':'delete','name':'reader8'}).status_code==403
+    schedule=admin.get('/api/schedule?month=2026-12').json
+    event={'title':'보존 일정','start':'2026-12-01','end':'2026-12-01','row':schedule['rows'][0]['id'],'state':'published'}
+    assert admin.post('/api/schedule/event',json=event,headers=ah).status_code==200
+    assert admin.post('/api/manual-upload',data={'title':'보존 파일','files':(io.BytesIO(b'%PDF-1.4'), 'keep.pdf')},headers=ah).status_code==200
+    assert admin.post('/api/users',json={'action':'delete','name':'reader8'},headers=ah).status_code==200
+    assert all(u['name']!='reader8' for u in admin.get('/api/users').json['users'])
+    assert any(e['title']=='보존 일정' for e in admin.get('/api/schedule?month=2026-12').json['events'])
+    assert any(d['title']=='보존 파일' for d in admin.get('/api/documents').json)
+    # Reusing a deleted username must not restore any old session.
+    assert admin.post('/api/users',json={'action':'create','name':'reader8','password':'12345678'},headers=ah).status_code==200
+    assert victim.get('/api/me').status_code==401
+    assert admin.post('/api/users',json={'action':'reset','name':'reader8','password':'1234567'},headers=ah).status_code==400
+    assert admin.post('/api/users',json={'action':'reset','name':'reader8','password':'87654321'},headers=ah).status_code==200
+    assert victim.post('/api/login',json={'name':'reader8','password':'87654321'}).status_code==200
    ''')
    p=subprocess.run([sys.executable,'-c',code],cwd=ROOT,env=env,text=True,capture_output=True)
    self.assertEqual(p.returncode,0,p.stderr)

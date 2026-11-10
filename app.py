@@ -206,8 +206,8 @@ def login():
 @protected(reader_write=True)
 def change_password():
     b=request.get_json(silent=True) or {}; old=b.get('current',''); new=b.get('new','')
-    if not isinstance(old,str) or not isinstance(new,str) or not 12<=len(new)<=128:
-        return jsonify(error='새 비밀번호는 12~128자로 입력하세요.'),400
+    if not isinstance(old,str) or not isinstance(new,str) or not 8<=len(new)<=128:
+        return jsonify(error='새 비밀번호는 8~128자로 입력하세요.'),400
     with db() as c:
         u=c.execute('SELECT password FROM users WHERE name=?',(session['user'],)).fetchone()
         if not u or not check_password_hash(u['password'],old):return jsonify(error='현재 비밀번호가 맞지 않습니다.'),400
@@ -246,9 +246,9 @@ def manage_users():
     if not isinstance(b,dict): abort(400)
     action=b.get('action');name=b.get('name');password=b.get('password','')
     if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9_-]{2,40}',name): abort(400)
-    if action not in ('create','reset','disable','enable','revoke'): abort(400)
-    if action in ('create','reset') and (not isinstance(password,str) or not 12<=len(password)<=128):
-        return jsonify(error='비밀번호는 12~128자로 입력하세요.'),400
+    if action not in ('create','reset','disable','enable','revoke','delete'): abort(400)
+    if action in ('create','reset') and (not isinstance(password,str) or not 8<=len(password)<=128):
+        return jsonify(error='비밀번호는 8~128자로 입력하세요.'),400
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         row=c.execute('SELECT role FROM users WHERE name=?',(name,)).fetchone()
@@ -262,7 +262,8 @@ def manage_users():
             if action in ('disable','enable'):
                 c.execute('INSERT INTO user_access(name,disabled) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET disabled=excluded.disabled',(name,1 if action=='disable' else 0))
             if action in ('reset','disable','revoke'):c.execute('DELETE FROM auth_sessions WHERE name=?',(name,))
-        log(c,{'create':'Reader 계정 생성','reset':'Reader 비밀번호 초기화','disable':'Reader 계정 중지','enable':'Reader 계정 활성화','revoke':'Reader 로그인 해제'}[action],name)
+            if action=='delete':c.execute('DELETE FROM users WHERE name=?',(name,))
+        log(c,{'create':'Reader 계정 생성','reset':'Reader 비밀번호 초기화','disable':'Reader 계정 중지','enable':'Reader 계정 활성화','revoke':'Reader 로그인 해제','delete':'Reader 계정 삭제'}[action],name)
     return jsonify(ok=True)
 
 # Only confirmed mastheads map to an issuer; ambiguous titles never infer one.
@@ -612,8 +613,8 @@ def ensure_admin():
         if c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone(): return
         name=os.environ.get('ERARCHIVE_ADMIN_USER','').strip()
         password=os.environ.get('ERARCHIVE_ADMIN_PASSWORD','')
-        if not re.fullmatch(r'[A-Za-z0-9_-]{2,40}',name) or not 12<=len(password)<=128:
-            raise SystemExit('Create an admin with --user, or set ERARCHIVE_ADMIN_USER and ERARCHIVE_ADMIN_PASSWORD (12-128 characters).')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{2,40}',name) or not 8<=len(password)<=128:
+            raise SystemExit('Create an admin with --user, or set ERARCHIVE_ADMIN_USER and ERARCHIVE_ADMIN_PASSWORD (8-128 characters).')
         if c.execute('SELECT 1 FROM users WHERE name=?',(name,)).fetchone():
             raise SystemExit('The initial admin name is already in use; choose a different name.')
         c.execute('INSERT INTO users VALUES(?,?,?)',(name,generate_password_hash(password),'admin'))
@@ -622,8 +623,8 @@ def main():
     import argparse,getpass
     p=argparse.ArgumentParser();p.add_argument('--user');p.add_argument('--role',choices=['admin','viewer'],default='viewer');p.add_argument('--startup-sync',action='store_true');p.add_argument('--host',default='0.0.0.0');p.add_argument('--port',type=int,default=os.environ.get('PORT','8000'));a=p.parse_args()
     if a.user:
-        pw=getpass.getpass('Password (12+ characters): ')
-        if len(pw)<12: raise SystemExit('Password must be 12+ characters')
+        pw=getpass.getpass('Password (8+ characters): ')
+        if len(pw)<8: raise SystemExit('Password must be 8+ characters')
         if pw!=getpass.getpass('Confirm password: '): raise SystemExit('Passwords differ')
         with db() as c: c.execute('INSERT OR REPLACE INTO users VALUES(?,?,?)',(a.user,generate_password_hash(pw),a.role))
         print('Account saved');return
