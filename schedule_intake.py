@@ -59,22 +59,14 @@ def install(a):
             job=dict(job);c.execute("UPDATE schedule_jobs SET state='running',error='' WHERE hash=?",(job['hash'],))
         try:
             sid=job['kind']+':'+job['hash'];path=a.DATA/'schedule_sources'/job['path']
-            with a.db() as c:
-                source=c.execute('SELECT text,reference FROM schedule_sources WHERE id=?',(sid,)).fetchone()
-                page=c.execute('SELECT p.text,d.meta FROM pages p JOIN documents d ON d.id=p.doc WHERE p.hash=?',(job['hash'],)).fetchone()
-                batch=c.execute("SELECT result,meta FROM batch_pages WHERE hash=? AND state='done'",(job['hash'],)).fetchone()
             reference=''
-            if source:text,reference=source['text'],source['reference']
-            elif job['kind']=='hwp':text=hwp_text(path.read_bytes())
-            elif page and page['text']:
-                text=page['text'];reference=json.loads(page['meta']).get('date','')
+            if job['kind']=='hwp':text=hwp_text(path.read_bytes())
             else:
-                result=json.loads(batch['result']) if batch else a.recognize_body(path)
+                result=a.recognize_body(path)
                 variants=result.get('variants',[])
                 if not variants:raise ValueError(result.get('status','OCR 인식 실패'))
                 text=variants[result.get('selected',0)].get('text','')
                 if not text.strip():raise ValueError('인식된 본문이 없습니다. 원본 상태를 확인한 뒤 다시 시도하세요.')
-                if batch:reference=json.loads(batch['meta']).get('date','')
             a.ingest_schedule(sid,job['name'],job['kind'],text,job['path'],reference)
             with a.db() as c:
                 c.execute('UPDATE schedule_sources SET name=?,path=? WHERE id=?',(job['name'],job['path'],sid))
@@ -128,8 +120,6 @@ def install(a):
         path=path.resolve();data=a.DATA.resolve()
         with a.db() as c:other=Path(json.loads(c.execute("SELECT value FROM settings WHERE key='inbox'").fetchone()[0])['path']).resolve()
         if path==data or data in path.parents or path==other:return jsonify(error='데이터 폴더와 홍보물 수집폴더는 일정자료 수집폴더로 지정할 수 없습니다.'),400
-        with a.db() as c:pc=c.execute("SELECT value FROM settings WHERE key='precision_inbox'").fetchone()
-        if pc and path==Path(json.loads(pc[0])['path']).resolve():return jsonify(error='정밀인식폴더와 다른 경로를 지정하세요.'),400
         with mutex:
             with a.db() as c:
                 c.execute("UPDATE settings SET value=? WHERE key='schedule_inbox'",(json.dumps({'enabled':b['enabled'],'path':str(path)},ensure_ascii=False),));a.log(c,'일정자료 수집폴더 변경')
