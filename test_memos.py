@@ -16,17 +16,17 @@ class MemoTests(unittest.TestCase):
   self.assertEqual(self.c.post('/api/memos/save',headers=self.h,json=self.payload(id=mid,version=old['version'],original='수정한 원문')).status_code,200)
   changed=self.c.get('/api/memos/'+mid).json;self.assertEqual(len(changed['history']),1)
   self.assertEqual(self.c.post('/api/memos/save',headers=self.h,json=self.payload(id=mid,version=old['version'])).status_code,409)
-  self.assertNotIn('history',self.v.get('/api/memos/'+mid).json)
+  self.assertEqual(self.v.get('/api/memos/'+mid).status_code,403)
  def test_search_followup_and_archive(self):
   mid=self.create();follow=self.create(title='후속 정보',related=[mid],organizations=['현대제철'])
-  self.assertEqual(self.v.get('/api/memos?q=참가').json['total'],2)
-  self.assertEqual(self.v.get('/api/memos?organization=포스코').json['total'],1)
-  self.assertEqual(self.v.get('/api/memos?from=2026-10-29').json['total'],0)
-  self.assertEqual(self.v.get('/api/memos/'+mid).json['followups'][0]['id'],follow)
+  self.assertEqual(self.c.get('/api/memos?q=참가').json['total'],2)
+  self.assertEqual(self.c.get('/api/memos?organization=포스코').json['total'],1)
+  self.assertEqual(self.c.get('/api/memos?from=2026-10-29').json['total'],0)
+  self.assertEqual(self.c.get('/api/memos/'+mid).json['followups'][0]['id'],follow)
   old=self.c.get('/api/memos/'+mid).json
   self.assertEqual(self.c.post('/api/memos/archive',headers=self.h,json={'id':mid,'version':old['version'],'archived':True}).status_code,200)
-  self.assertEqual(self.v.get('/api/memos/'+mid).status_code,404)
-  self.assertEqual(self.v.get('/api/memos?archived=1').json['total'],1)
+  self.assertEqual(self.v.get('/api/memos/'+mid).status_code,403)
+  self.assertEqual(self.v.get('/api/memos?archived=1').status_code,403)
   self.assertEqual(self.c.get('/api/memos?archived=1').json['total'],2)
  def test_bad_links_and_memo_schedule_reference(self):
   self.assertEqual(self.c.post('/api/memos/save',headers=self.h,json=self.payload(links=['javascript:alert(1)'])).status_code,400)
@@ -46,21 +46,28 @@ class MemoTests(unittest.TestCase):
   minimal.pop('version')
   self.assertEqual(self.c.post('/api/memos/save',headers=self.h,json=minimal).status_code,409)
 
- def test_anonymous_submission_and_admin_approval(self):
-  guest=app.app.test_client()
-  payload={'title':'제보','original':'원문','organizations':[]}
-  self.assertEqual(guest.post('/api/memos/save',json=payload).status_code,403)
-  csrf=guest.get('/api/memos?all=1').json['csrf']
-  headers={'X-CSRF':csrf}
-  result=guest.post('/api/memos/save',headers=headers,json=payload)
-  self.assertEqual(result.status_code,200)
-  mid=result.json['id'];detail=guest.get('/api/memos/'+mid).json
-  self.assertEqual(detail['organizations'],[])
-  self.assertEqual(guest.post('/api/memos/save',headers=headers,json={**payload,'id':mid,'version':detail['version']}).status_code,403)
-  self.assertEqual(guest.post('/api/memos/archive',headers=headers,json={'id':mid,'version':detail['version'],'archived':True}).status_code,401)
-  result=self.c.post('/api/memos/save',headers=self.h,json={'id':mid,'version':detail['version'],'organizations':['포항지회']})
-  self.assertEqual(result.status_code,200)
-  updated=guest.get('/api/memos/'+mid).json
-  self.assertEqual(updated['organizations'],['포항지회']);self.assertEqual(updated['original'],'원문')
-  listed=guest.get('/api/memos?all=1').json['items'][0]
-  self.assertEqual(listed['original'],'원문');self.assertTrue(listed['created'])
+ def test_non_admin_blocked_and_new_memo_enqueued(self):
+  guest=app.app.test_client();payload={'title':'일정 공지','original':'2026년 11월 10일 14시 교섭 회의','organizations':[]}
+  self.assertEqual(guest.get('/api/memos').status_code,401)
+  self.assertEqual(guest.post('/api/memos/save',json=payload).status_code,401)
+  self.assertEqual(self.v.get('/api/memos').status_code,403)
+  result=self.c.post('/api/memos/save',headers=self.h,json=payload);self.assertEqual(result.status_code,200);self.assertTrue(result.json['schedule_queued'])
+  mid=result.json['id'];sid='memo:'+mid
+  with app.db() as c:
+   source=c.execute('SELECT * FROM schedule_sources WHERE id=?',(sid,)).fetchone();self.assertEqual(source['text'],payload['original']);self.assertEqual(source['kind'],'memo')
+  groups=self.c.get('/api/schedule/review-sources').json['groups'];self.assertTrue(any(g['id']==sid and not g['done'] for g in groups))
+  app.scan_schedules()
+  groups=self.c.get('/api/schedule/review-sources').json['groups'];self.assertTrue(any(g['id']==sid and not g['done'] for g in groups))
+  self.assertEqual(self.c.get('/api/schedule/source/'+sid).json['text'],payload['original'])
+  with app.db() as c:
+   pending=[__import__('json').loads(r['data']) for r in c.execute("SELECT data FROM schedule_events WHERE source=? AND state='pending'",(sid,))]
+  self.assertTrue(pending);self.assertEqual(pending[0]['memo_id'],mid)
+  detail=self.c.get('/api/memos/'+mid).json
+  result=self.c.post('/api/memos/save',headers=self.h,json={'id':mid,'version':detail['version'],'title':'수정','original':'수정'});self.assertFalse(result.json['schedule_queued'])
+  with app.db() as c:self.assertEqual(c.execute('SELECT count(*) FROM schedule_sources WHERE id=?',(sid,)).fetchone()[0],1)
+ def test_memo_without_date_still_queued(self):
+  mid=self.create(title='날짜 없는 메모',original='회의 관련 참고사항')
+  app.scan_schedules()
+  self.assertTrue(any(g['id']=='memo:'+mid and not g['done'] for g in self.c.get('/api/schedule/review-sources').json['groups']))
+
+if __name__=='__main__':unittest.main()

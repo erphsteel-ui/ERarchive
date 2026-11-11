@@ -21,32 +21,95 @@ class ScheduleTests(unittest.TestCase):
   admin=self.admin.get('/api/schedule?month=2026-10').json
   candidate=admin['pending'][0]
   self.assertEqual(self.guest.get('/api/schedule/source/image:test').status_code,401)
-  self.assertEqual(self.guest.post('/api/schedule/event',json={}).status_code,401)
+  self.assertEqual(self.guest.post('/api/schedule/event',json={}).status_code,403)
   self.assertEqual(self.admin.post('/api/schedule/event',json={}).status_code,403)
   self.assertEqual(self.save(id=candidate['id'],version=1).status_code,200)
   visible=self.guest.get('/api/schedule?month=2026-11').json
   self.assertEqual(len(visible['events']),1);self.assertNotIn('pending',visible)
   self.assertNotIn('quote',visible['events'][0]);self.assertNotIn('source',visible['events'][0])
   self.assertEqual(self.save(id=candidate['id'],version=1).status_code,409)
- def test_team_member_can_create_but_not_edit_and_admin_can_set_result(self):
+ def test_team_member_can_create_but_not_edit(self):
   with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
   member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
   body=dict(title='현장 교섭',row='1',start='2026-10-30',end='',kind='일정',status='예정',state='published')
-  self.assertEqual(self.guest.post('/api/schedule/event',json=body).status_code,401)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=body).status_code,403)
   response=member.post('/api/schedule/event',json=body,headers=headers);self.assertEqual(response.status_code,200)
   item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
   self.assertEqual(member.post('/api/schedule/event',json={**body,'id':item['id'],'version':item['version']},headers=headers).status_code,403)
-  result=dict(id=item['id'],version=item['version'],result='잠정합의',note='다음 주 재논의')
-  self.assertEqual(member.post('/api/schedule/result',json=result,headers=headers).status_code,403)
-  self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,200)
-  self.assertEqual(self.admin.post('/api/schedule/result',json=result,headers=self.headers).status_code,409)
+ def test_team_member_can_select_each_schedule_kind(self):
+  with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
+  member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
+  body=dict(title='일정',row='1',start='2026-10-30',end='',status='예정',state='published')
+  kinds=['일정','교육','회의','교섭','행사','집회','기타']
+  for kind in kinds:self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':kind},headers=headers).status_code,200,kind)
+  self.assertEqual(member.post('/api/schedule/event',json={**body,'kind':'임의'},headers=headers).status_code,403)
+  self.assertCountEqual([item['kind'] for item in self.guest.get('/api/schedule?month=2026-10').json['events']],kinds)
+ def test_guest_can_create_with_csrf_but_not_edit(self):
+  response=self.guest.get('/api/me');token=response.json['csrf'];self.assertTrue(token)
+  body=dict(title='비로그인 일정',row='1',start='2026-10-30',end='',kind='일정',category='meeting',status='예정',state='published',dday=False)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=body,headers={'X-CSRF':'wrong'}).status_code,403)
+  created=self.guest.post('/api/schedule/event',json=body,headers={'X-CSRF':token});self.assertEqual(created.status_code,200)
+  visible=self.guest.get('/api/schedule?month=2026-10').json['events'];item=next(e for e in visible if e['id']==created.json['id']);self.assertEqual(item['category'],'meeting')
+  self.assertEqual(self.guest.post('/api/schedule/event',json={**body,'id':item['id'],'version':item['version']},headers={'X-CSRF':token}).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/event',json={**body,'state':'pending'},headers={'X-CSRF':token}).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/rows',json={},headers={'X-CSRF':token}).status_code,401)
+ def test_viewer_can_edit_published_schedule_without_admin_fields(self):
+  created=self.save(title='기존 일정',status='확정',category='meeting',dday=True);self.assertEqual(created.status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];token=self.guest.get('/api/me').json['csrf'];headers={'X-CSRF':token}
+  payload=dict(id=item['id'],version=item['version'],title='변경 일정',row=item['row'],start=item['start'],end=item['end'],category='issue',state='published')
+  self.assertEqual(self.guest.post('/api/schedule/event',json=payload,headers={'X-CSRF':'bad'}).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/event',json={**payload,'state':'rejected'},headers=headers).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/event',json={**payload,'status':'취소'},headers=headers).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=payload,headers=headers).status_code,200)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=payload,headers=headers).status_code,409)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];self.assertEqual((item['title'],item['category'],item['status'],item['dday']),('변경 일정','issue','확정',True))
+  pending=self.save(title='검토 대기',state='pending').json['id'];self.assertEqual(self.guest.post('/api/schedule/event',json={**payload,'id':pending,'version':1},headers=headers).status_code,403)
+ def test_guest_can_remove_only_published_schedule_with_current_version(self):
+  item_id=self.save(title='위젯 일정').json['id'];token=self.guest.get('/api/me').json['csrf'];headers={'X-CSRF':token}
+  self.assertEqual(self.guest.post('/api/schedule/event',json={'id':item_id,'version':1,'state':'rejected'},headers={'X-CSRF':'bad'}).status_code,403)
+  self.assertEqual(self.guest.post('/api/schedule/event',json={'id':item_id,'version':1,'state':'rejected'},headers=headers).status_code,200)
+  self.assertFalse(any(e['id']==item_id for e in self.guest.get('/api/schedule?month=2026-10').json['events']))
+  with app.db() as c:self.assertEqual(c.execute('SELECT state FROM schedule_events WHERE id=?',(item_id,)).fetchone()[0],'rejected')
+  pending=self.save(title='검토 대기',state='pending').json['id']
+  self.assertEqual(self.guest.post('/api/schedule/event',json={'id':pending,'version':1,'state':'rejected'},headers=headers).status_code,403)
+ def test_category_override_roundtrip_and_reset(self):
+  created=self.save(title='안전 교육',category='meeting');self.assertEqual(created.status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];self.assertEqual(item['category'],'meeting')
+  self.assertEqual(self.save(id=item['id'],version=item['version'],title=item['title'],category='wrong').status_code,400)
+  self.assertEqual(self.save(id=item['id'],version=item['version'],title=item['title'],category='').status_code,200)
+  item=self.guest.get('/api/schedule?month=2026-10').json['events'][0];self.assertNotIn('category',item)
+ def test_created_and_updated_timestamps_visible_for_readers(self):
+  self.assertEqual(self.save().status_code,200)
   item=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
-  self.assertEqual((item['result'],item['result_note']),('잠정합의','다음 주 재논의'))
+  self.assertTrue(item['createdAt']);self.assertTrue(item['updatedAt'])
+  self.assertEqual(self.save(id=item['id'],version=item['version'],title='수정 일정').status_code,200)
+  updated=self.guest.get('/api/schedule?month=2026-10').json['events'][0]
+  self.assertEqual(updated['createdAt'],item['createdAt']);self.assertTrue(updated['updatedAt'])
+ def test_calendar_day_order_is_shared_scoped_and_admin_only(self):
+  with app.db() as c:c.execute('DELETE FROM schedule_day_order')
+  ids=[self.save(title=title,start='2026-11-05',end='2026-11-05').json['id'] for title in ('가','나','다')]
+  request={'date':'2026-11-05','group':'pohang','ids':[ids[2],ids[0],ids[1]],'previous':[]}
+  self.assertEqual(self.guest.post('/api/schedule/day-order',json=request).status_code,401)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'group':'dangjin'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'date':'2026-11-06'},headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-11').json['day_orders']['2026-11-05|pohang'],request['ids'])
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,409)
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json={**request,'previous':request['ids'],'ids':ids},headers=self.headers).status_code,200)
+  self.assertEqual(self.guest.get('/api/schedule?month=2026-10').json['day_orders'],{})
+ def test_combined_other_branch_day_order_preserves_original_rows(self):
+  with app.db() as c:c.execute('DELETE FROM schedule_day_order')
+  ids=[self.save(title=name,row=row,start='2026-11-05',end='2026-11-05').json['id'] for row,name in [('2','당진 일정'),('3','인천 일정'),('4','당냉 일정'),('5','순천 일정')]]
+  request={'date':'2026-11-05','group':'otherbranch','ids':ids[::-1],'previous':[]}
+  self.assertEqual(self.admin.post('/api/schedule/day-order',json=request,headers=self.headers).status_code,200)
+  result=self.guest.get('/api/schedule?month=2026-11').json
+  self.assertEqual(result['day_orders']['2026-11-05|otherbranch'],ids[::-1])
+  self.assertEqual({e['row'] for e in result['events']},{'2','3','4','5'})
  def test_dday_permissions_filter_and_preservation(self):
   with app.db() as c:c.execute("INSERT OR REPLACE INTO users VALUES('calendar-member',?,'viewer')",(generate_password_hash('schedule-test-123'),))
   member=app.app.test_client();headers={'X-CSRF':member.post('/api/login',json={'name':'calendar-member','password':'schedule-test-123'}).json['csrf']}
   base=dict(title='기간 일정',row='1',start='2026-11-02',end='2026-11-04',kind='일정',status='예정',state='published',dday=True)
-  self.assertEqual(self.guest.post('/api/schedule/event',json=base).status_code,401)
+  self.assertEqual(self.guest.post('/api/schedule/event',json=base).status_code,403)
   created=member.post('/api/schedule/event',json=base,headers=headers);self.assertEqual(created.status_code,200)
   self.assertEqual(member.post('/api/schedule/event',json={**base,'dday':'yes'},headers=headers).status_code,400)
   self.assertEqual(self.save(title='게시 전',state='pending',dday=True).status_code,200)

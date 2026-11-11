@@ -64,8 +64,7 @@ def install(a):
   with a.db() as c:
    counts={'schedule':c.execute("SELECT COUNT(*) FROM schedule_events WHERE state='pending'").fetchone()[0],
     'batches':c.execute("SELECT COUNT(*) FROM batches WHERE state IN ('queued','processing','review')").fetchone()[0],
-    'drafts':c.execute("SELECT COUNT(*) FROM documents WHERE json_extract(meta,'$.state')='draft'").fetchone()[0],
-    'precision':c.execute("SELECT COUNT(*) FROM precision_jobs WHERE state IN ('queued','running','done','failed')").fetchone()[0]}
+    'drafts':c.execute("SELECT COUNT(*) FROM documents WHERE json_extract(meta,'$.state')='draft'").fetchone()[0]}
    auto=c.execute("SELECT value FROM settings WHERE key='last_auto_news_sync_at'").fetchone()
   return jsonify(counts=counts,sync={**state,'last_success':last_success(),'last_auto_success':auto[0] if auto else ''})
  return start_scheduler

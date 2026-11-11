@@ -128,8 +128,6 @@ def install(a):
         path=path.resolve();data=a.DATA.resolve()
         with a.db() as c:other=Path(json.loads(c.execute("SELECT value FROM settings WHERE key='inbox'").fetchone()[0])['path']).resolve()
         if path==data or data in path.parents or path==other:return jsonify(error='데이터 폴더와 홍보물 수집폴더는 일정자료 수집폴더로 지정할 수 없습니다.'),400
-        with a.db() as c:pc=c.execute("SELECT value FROM settings WHERE key='precision_inbox'").fetchone()
-        if pc and path==Path(json.loads(pc[0])['path']).resolve():return jsonify(error='정밀인식폴더와 다른 경로를 지정하세요.'),400
         with mutex:
             with a.db() as c:
                 c.execute("UPDATE settings SET value=? WHERE key='schedule_inbox'",(json.dumps({'enabled':b['enabled'],'path':str(path)},ensure_ascii=False),));a.log(c,'일정자료 수집폴더 변경')

@@ -1,0 +1,3 @@
+위젯 실행 수정 안내
+
+서버를 종료하고 기존 데이터를 백업한 뒤 압축 안 파일을 기존 폴더에 덮어쓰세요. data와 .venv는 지우지 않습니다. 서버를 재시작하고 run_widget.bat를 실행하세요. 문제가 계속되면 위젯_실행_오류확인.bat를 실행하고 표시된 오류나 %TEMP%\ER_widget_error.log를 확인하세요. run_widget.bat와 widget_window.ps1은 같은 폴더에 있어야 합니다.

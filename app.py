@@ -1,6 +1,6 @@
 from ocr_engine import recognize_body
 import tempfile
-import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time
+import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time, ipaddress
 from pathlib import Path
 from functools import wraps
 from flask import Flask, request, session, jsonify, send_file, render_template, abort
@@ -50,17 +50,78 @@ init()
 def stamp(): return datetime.datetime.now().astimezone().isoformat(timespec='seconds')
 def log(c, action, doc=''):
     c.execute('INSERT INTO audit(time,actor,action,doc) VALUES(?,?,?,?)',(stamp(),session.get('user','CLI'),action,doc))
-def protected(admin=False):
+def protected(admin=False, allow_guest_write=False):
     def dec(fn):
         @wraps(fn)
         def wrap(*a,**kw):
             with db() as c: u=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
-            if not u and (admin or request.method not in ('GET','HEAD')): abort(401)
+            if not u and (admin or (request.method not in ('GET','HEAD') and not allow_guest_write)): abort(401)
             if admin and u['role']!='admin': abort(403)
-            if request.method not in ('GET','HEAD') and not secrets.compare_digest(request.headers.get('X-CSRF',''),session.get('csrf','invalid')): abort(403)
+            if request.method not in ('GET','HEAD') and (not session.get('csrf') or not secrets.compare_digest(request.headers.get('X-CSRF',''),session['csrf'])): abort(403)
             return fn(*a,**kw)
         return wrap
     return dec
+def normalized_client_ip(value):
+    try:
+        address=ipaddress.ip_address(value or '')
+        if isinstance(address,ipaddress.IPv6Address) and address.ipv4_mapped:address=address.ipv4_mapped
+        return address
+    except ValueError:return None
+
+def viewer_ip_allowed(c,client):
+    if client is None:return False
+    if client.is_loopback:return True
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+    try:allowed=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):return False
+    return isinstance(allowed,list) and str(client) in allowed
+
+def viewer_ip_restriction_enabled(c):
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_restriction_enabled'").fetchone()
+    return bool(row and row[0]=='1')
+
+@app.before_request
+def restrict_viewer_api():
+    # Use the connection peer, never untrusted forwarding headers.
+    if not request.path.startswith('/api/') or request.path in ('/api/login','/api/logout'):return
+    client=normalized_client_ip(request.remote_addr)
+    with db() as c:
+        if not viewer_ip_restriction_enabled(c):return
+        user=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
+        if user and user['role']=='admin':return
+        if viewer_ip_allowed(c,client):return
+    return jsonify(error='이 PC는 일반 열람 허용 IP에 등록되어 있지 않습니다. 관리자에게 문의하세요.'),403
+
+@app.get('/api/viewer-ips')
+@protected(True)
+def get_viewer_ips():
+    with db() as c:
+        row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+        enabled=viewer_ip_restriction_enabled(c)
+    try:addresses=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):addresses=[]
+    return jsonify(addresses=addresses,enabled=enabled,client_ip=str(normalized_client_ip(request.remote_addr) or ''))
+
+@app.post('/api/viewer-ips')
+@protected(True)
+def save_viewer_ips():
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict) or not isinstance(b.get('addresses'),list) or len(b['addresses'])>256:abort(400)
+    if 'enabled' in b and type(b['enabled']) is not bool:abort(400)
+    addresses=[]
+    for item in b['addresses']:
+        if not isinstance(item,str) or len(item)>45:abort(400)
+        address=normalized_client_ip(item.strip())
+        if address is None or address.is_unspecified or address.is_multicast:return jsonify(error='올바른 개별 IP 주소를 한 줄에 하나씩 입력하세요.'),400
+        value=str(address)
+        if value not in addresses:addresses.append(value)
+    with db() as c:
+        enabled=b.get('enabled',viewer_ip_restriction_enabled(c))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_allowlist',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(addresses),))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_restriction_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",('1' if enabled else '0',))
+        log(c,'일반 열람 IP 설정 변경',('제한 사용' if enabled else '제한 해제')+', '+str(len(addresses))+'개')
+    return jsonify(ok=True,count=len(addresses),enabled=enabled)
+
 @app.after_request
 def headers(r):
     r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='DENY'
@@ -75,6 +136,8 @@ def headers(r):
 def error(e): return jsonify(error={400:'입력값 또는 이미지 형식을 확인하세요.',401:'로그인이 필요합니다.',403:'접근 권한 또는 요청 인증을 확인하세요.',404:'자료를 찾을 수 없습니다.',409:'중복 자료 또는 다른 창의 수정 내역이 있습니다. 새로고침하세요.',413:'한 번에 60MB 이하로 올려주세요.'}.get(e.code,'오류')), e.code
 @app.get('/')
 def index(): return render_template('index.html')
+@app.get('/widget')
+def widget(): return render_template('widget.html')
 @app.post('/api/login')
 def login():
     # Cross-origin JSON POST is not permitted; no CORS enabled.
@@ -109,6 +172,7 @@ def change_password():
 @app.get('/api/me')
 @protected()
 def me():
+    if not session.get('csrf'):session['csrf']=secrets.token_hex(24)
     role=current_role()
     return jsonify(user=session.get('user',''),role=role,csrf=session.get('csrf',''))
 
@@ -488,10 +552,12 @@ import steel_press
 steel_press.install(sys.modules[__name__])
 import news
 news.install(sys.modules[__name__])
-import memos
-memos.install(sys.modules[__name__])
 import regulations
 regulations.install(sys.modules[__name__])
+import occasions
+occasions.install(sys.modules[__name__])
+import training_export
+training_export.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import
@@ -500,8 +566,6 @@ import schedule
 start_schedule=schedule.install(sys.modules[__name__])
 import schedule_intake
 schedule_intake.install(sys.modules[__name__])
-import precision
-precision.install(sys.modules[__name__])
 import auto_sync
 start_auto_sync=auto_sync.install(sys.modules[__name__])
 

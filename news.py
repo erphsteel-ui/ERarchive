@@ -66,17 +66,19 @@ def headline_groups(records,now):
         if published.tzinfo is None:continue
         day=published.astimezone(korea).date()
         if day in candidates and published<=now and not n['excluded'] and (n['relevance']=='keep' or n['important']) and not should_drop(n['title']) and not strict_drop(n['title'],n.get('description',''),n.get('category')) and not demoted(n['title'],n.get('description','')):candidates[day].append(n)
-    selected=candidates[today] or candidates[today-dt.timedelta(days=1)]
-    groups=sorted(group_articles(selected),key=headline_rank,reverse=True);chosen=[]
+    today_groups=sorted(group_articles(candidates[today]),key=headline_rank,reverse=True)
+    yesterday_groups=sorted(group_articles(candidates[today-dt.timedelta(days=1)]),key=headline_rank,reverse=True)
+    chosen=[]
     def diverse(item):
         subject=headline_subject(item['title'])
         return all(not (subject and subject==headline_subject(existing['title'])) and title_overlap(item['title'],existing['title'])<.4 and SequenceMatcher(None,normalized(item['title']),normalized(existing['title'])).ratio()<.85 for existing in chosen)
-    for item in groups:
-        if len(chosen)>=2:break
-        if headline_company(item) and diverse(item):chosen.append(item)
-    for item in groups:
-        if len(chosen)>=4:break
-        if item not in chosen and diverse(item):chosen.append(item)
+    for groups in (today_groups,yesterday_groups):
+        for item in groups:
+            if len(chosen)>=2:break
+            if headline_company(item) and diverse(item):chosen.append(item)
+        for item in groups:
+            if len(chosen)>=4:break
+            if item not in chosen and diverse(item):chosen.append(item)
     return chosen
 
 def reclassify_news(c):
