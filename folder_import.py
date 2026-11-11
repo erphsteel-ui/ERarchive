@@ -151,8 +151,6 @@ def install(a):
         if path==data or data in path.parents:return jsonify(error='자료실 데이터 폴더를 수집폴더로 사용할 수 없습니다.'),400
         with a.db() as c:sc=c.execute("SELECT value FROM settings WHERE key='schedule_inbox'").fetchone()
         if sc and path==Path(json.loads(sc[0])['path']).resolve():return jsonify(error='일정자료 수집폴더와 홍보물 수집폴더는 서로 다른 경로여야 합니다.'),400
-        with a.db() as c:pc=c.execute("SELECT value FROM settings WHERE key='precision_inbox'").fetchone()
-        if pc and path==Path(json.loads(pc[0])['path']).resolve():return jsonify(error='정밀인식폴더와 다른 경로를 지정하세요.'),400
         with monitor.lock:
             with a.db() as c:
                 c.execute("UPDATE settings SET value=? WHERE key='inbox'",(json.dumps({'enabled':body['enabled'],'path':str(path)},ensure_ascii=False),));a.log(c,'수집폴더 설정 변경')
