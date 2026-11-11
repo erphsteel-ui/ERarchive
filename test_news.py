@@ -91,7 +91,7 @@ class HeadlineTests(unittest.TestCase):
     c.execute('INSERT INTO news_articles(id,url,title,description,publisher,published,category,important,excluded,relevance,filter_reason,preview) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(pid,url,title,'','example.com',date,category,important,0,'keep','test','ready' if i==0 else ''))
     if i==0:(app.DATA/'news_previews'/(pid+'.jpg')).write_bytes(b'image')
   headlines=self.v.get('/api/news').json['headlines']
-  self.assertEqual([r['title'] for r in headlines],[x[0] for x in examples[1:3]])
+  self.assertEqual([r['title'] for r in headlines],[examples[i][0] for i in (1,2,0)])
   self.assertEqual(self.v.get('/api/news?q=nomatch&category=安全&offset=100').status_code,400)
   self.assertEqual(self.v.get('/api/news?q=nomatch&category=안전&offset=100').json['headlines'],headlines)
 
