@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('node:assert/strict'),vm=require('node:vm');
+const source=fs.readFileSync('static/schedule.js','utf8');
+const context=vm.createContext({scheduleMonth:'2026-11',scheduleZoom:false,scheduleAnchor:'',user:{role:'admin'},esc:s=>String(s??'')});
+context.scheduleData={rows:[{id:'c',group:'당사',name:'공통'},{id:'p',group:'당사',name:'포항'},{id:'d',group:'당사',name:'당진'},{id:'i',group:'당사',name:'인천'},{id:'l',group:'노동계',name:'금속노조'},{id:'a',group:'계열사',name:'공통'},{id:'g',group:'그룹사',name:'공통'},{id:'o',group:'기타',name:'기타'}],events:[{id:'d1',row:'d',title:'당진 일정',start:'2026-11-05',end:'2026-11-05',status:'예정',kind:'일정'},{id:'i1',row:'i',title:'인천 일정',start:'2026-11-05',end:'2026-11-05',status:'예정',kind:'일정'}],day_orders:{'2026-11-05|dangjin':['d1'],'2026-11-05|incheon':['i1']}};
+vm.runInContext(source.slice(source.indexOf('function calendarGroups(){'),source.indexOf('function renderScheduleGrid(){')),context);
+assert.deepEqual(Array.from(vm.runInContext('calendarGroups().map(g=>g.label)',context)),['공통','포항','타지회','금속노조','계열사','그룹사','기타']);
+assert.deepEqual(Array.from(vm.runInContext("calendarGroups().find(g=>g.id==='otherbranch').rows.map(r=>r.id)",context)),['d','i']);
+assert.deepEqual(Array.from(vm.runInContext("calendarDayEvents(calendarGroups()[2],'2026-11-05').map(e=>e.id)",context)),['d1','i1']);
+let options=vm.runInContext("calendarSelectOptions('i')",context);assert.match(options,/value="i" selected>타지회 · 인천/);assert.match(options,/value="d" >타지회 · 당진/);
+context.scheduleData.day_orders['2026-11-05|otherbranch']=['i1','d1'];assert.deepEqual(Array.from(vm.runInContext("calendarDayEvents(calendarGroups()[2],'2026-11-05').map(e=>e.id)",context)),['i1','d1']);
+let html=vm.runInContext('compactCalendarHTML(true)',context);assert.equal((html.match(/data-calendar-group="otherbranch"/g)||[]).length,30);assert(html.includes('data-event="d1"')&&html.includes('data-event="i1"'));
+console.log('PASS: seven groups, merged branches, legacy ordering, and original row selection');
