@@ -1,0 +1,18 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
+for(const role of ['admin','viewer']){
+ const page=await browser.newPage({viewport:{width:1440,height:900}});await page.setContent(fs.readFileSync('templates/index.html','utf8'));await page.addStyleTag({content:fs.readFileSync('static/style.css','utf8')});await page.addStyleTag({content:fs.readFileSync('static/theme.css','utf8')});await page.addScriptTag({content:fs.readFileSync('static/app.js','utf8').replace('boot();','')});
+ await page.evaluate(role=>{document.querySelector('#workspace').hidden=false;document.body.className=role==='viewer'?'viewerrole':'';user={role};const sample=(id,category,publishers,title='소식')=>({id,date:'2026-10-20',created:'2026-10-20',state:'published',title,kind:'홍보물',issue:'',tags:[],pages:[],publishers,categories:[category]});docs=[sample('d1','집행부',['현대제철 당진냉연지회']),sample('d2','집행부',['현대제철 당진지회']),sample('d3','집행부',['현대제철 본조']),sample('a1','계열사',['현대IMC지회']),sample('a2','계열사',['협력사 비정규직지회']),sample('a3','계열사',['새 계열사']),sample('g1','그룹사',['현대자동차지부']),sample('g2','그룹사',['현자 비정규직지회']),sample('g3','그룹사',['기아지부']),sample('g4','그룹사',['현대차지부','기아 현장조직']),sample('g5','그룹사',['신규 그룹사']),sample('t','그룹사',['이름없는 발행처'],'현대자 소식')];render()},role);
+ assert(await page.locator('#categorySubFilters').isHidden());
+ await page.locator('[data-category="집행부"]').click();let texts=await page.locator('[data-sub-category]').allTextContents();assert.deepEqual(texts,['전체 (3)','당진 (1)','당진냉연 (1)','기타(본조/공통) (1)']);
+ await page.locator('[data-sub-category="당진"]').click();assert.deepEqual(await page.locator('[data-read]').evaluateAll(nodes=>nodes.map(x=>x.dataset.read)),['d2']);
+ await page.locator('[data-category="계열사"]').click();assert.equal(await page.locator('[data-sub-category=""]').getAttribute('aria-pressed'),'true');texts=await page.locator('[data-sub-category]').allTextContents();assert.deepEqual(texts,['전체 (3)','비정규직지회 (1)','IMC지회 (1)','새 계열사 (1)']);await page.locator('[data-sub-category="새 계열사"]').click();assert.equal(await page.locator('[data-read]').count(),1);
+ await page.locator('[data-category="그룹사"]').click();assert.equal(await page.locator('[data-org-type=""]').getAttribute('aria-pressed'),'true');assert.match(await page.locator('[data-sub-category="현대차"]').textContent(),/\(4\)/);assert.match(await page.locator('[data-sub-category="기아"]').textContent(),/\(2\)/);
+ await page.locator('[data-sub-category="현대차"]').click();await page.locator('[data-org-type="지회"]').click();assert.deepEqual(await page.locator('[data-read]').evaluateAll(nodes=>nodes.map(x=>x.dataset.read)),['g2']);
+ await page.locator('[data-sub-category="기아"]').click();assert.equal(await page.locator('[data-org-type=""]').getAttribute('aria-pressed'),'true');await page.locator('[data-org-type="제조직"]').click();assert.deepEqual(await page.locator('[data-read]').evaluateAll(nodes=>nodes.map(x=>x.dataset.read)),['g4']);
+ await page.locator('[data-category="회사"]').click();assert(await page.locator('#categorySubFilters').isHidden());
+ await page.locator('[data-category="그룹사"]').click();await page.locator('#search').fill('현대자');await page.locator('#search').dispatchEvent('input');assert.match(await page.locator('[data-sub-category="현대차"]').textContent(),/\(3\)/);
+ await page.close();
+}
+console.log('PASS: category mapping, counts, multi-publisher filters, search and resets for admin and viewer');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});
