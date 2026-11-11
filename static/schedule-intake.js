@@ -11,7 +11,7 @@ async function loadScheduleIntake(fill=false){
  }catch(e){$('#scheduleIntakeMessage').textContent=e.message}finally{scheduleIntakeLoading=false}
 }
 async function openScheduleIntake(config=false){$('#scheduleIntakeMessage').textContent='';$('#scheduleIntakeConfig').open=config;$('#scheduleIntakeDialog').showModal();await loadScheduleIntake(true)}
-$('#scheduleUploadButton').onclick=()=>openScheduleIntake();$('#scheduleInboxButton').onclick=()=>openScheduleIntake(true);
+$('#scheduleInboxButton').onclick=()=>openScheduleIntake(true);
 $('#scheduleIntakeRefresh').onclick=()=>loadScheduleIntake();
 $('#scheduleIntakeReview').onclick=()=>{$('#scheduleIntakeDialog').close();showSchedule(true)};
 $('#scheduleIntakeSave').onclick=async()=>{try{await api('schedule/intake/config',{path:$('#scheduleIntakePath').value.trim(),enabled:$('#scheduleIntakeEnabled').checked});$('#scheduleIntakeMessage').textContent='일정자료 수집폴더를 저장했습니다.';await loadScheduleIntake(true)}catch(e){$('#scheduleIntakeMessage').textContent=e.message}};

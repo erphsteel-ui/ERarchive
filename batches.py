@@ -192,7 +192,6 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
             with db() as c:
                 orgs=json.loads(c.execute("SELECT value FROM settings WHERE key='organizations'").fetchone()[0]);m=a.suggest(r.get('raw',''),orgs,r.get('regions',{}))
                 c.execute('UPDATE batch_pages SET state=?,result=?,meta=?,elapsed=? WHERE id=?',('done' if r.get('variants') else 'failed',json.dumps(r,ensure_ascii=False),json.dumps(m,ensure_ascii=False),round(time.monotonic()-begin,1),p['id']))
-            if r.get('variants') and hasattr(a,'request_schedule_scan'):a.request_schedule_scan()
         with db() as c:
             if not c.execute("SELECT 1 FROM batch_pages WHERE batch=? AND state IN ('queued','running')",(b['id'],)).fetchone():
                 items=[dict(p) for p in c.execute('SELECT id,name,meta,path FROM batch_pages WHERE batch=? ORDER BY position',(b['id'],))]
@@ -204,7 +203,6 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
         return True
     def recover():
         if hasattr(a,'recover_schedule_jobs'):a.recover_schedule_jobs()
-        if hasattr(a,'recover_precision_jobs'):a.recover_precision_jobs()
         with db() as c:
             c.execute("UPDATE batch_pages SET state='queued' WHERE state='running'")
             c.execute("UPDATE batches SET state='queued' WHERE state='processing'")
@@ -218,7 +216,6 @@ INSERT OR IGNORE INTO file_imports SELECT hash,datetime('now') FROM batch_pages;
                 try:
                     worked=process_one()
                     if hasattr(a,'process_schedule_job'):worked=a.process_schedule_job() or worked
-                    if hasattr(a,'process_precision_job'):worked=a.process_precision_job() or worked
                     if worked:continue
                 except Exception:app.logger.exception('Batch queue error')
                 _WAKE.wait(3);_WAKE.clear()
