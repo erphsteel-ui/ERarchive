@@ -1,10 +1,10 @@
 'use strict';
-let adminStatusBusy=false,adminSyncAttempt=null,adminSyncWasRunning=false;
+let adminStatusBusy=false;
 async function pollAdminStatus(){
  if(user?.role!=='admin'||adminStatusBusy)return;
  adminStatusBusy=true;
- try{const data=await api('admin/status');for(const [id,key] of [['scheduleReviewNav','schedule'],['batchButton','batches'],['draftNav','drafts'],['precisionButton','precision']]){const badge=$('#'+id+' .admin-count');if(badge){const count=data.counts[key]||0;badge.textContent=String(count);badge.hidden=count===0;badge.setAttribute('aria-label',count+'건')}}for(const [id,count] of [['adminScheduleAlert',data.counts.schedule||0],['adminPublicationAlert',(data.counts.batches||0)+(data.counts.drafts||0)]]){const alert=$('#'+id);if(alert){alert.hidden=!count;alert.querySelector('span').textContent=String(count);if(id==='adminPublicationAlert')alert.dataset.hasBatches=String((data.counts.batches||0)>0)}}const info=data.sync,status=$('#adminSyncStatus');if(adminSyncAttempt!==null&&!info.running&&(adminSyncWasRunning||info.last_attempt!==adminSyncAttempt)&&typeof newsActive!=='undefined'&&newsActive)loadNews(true);adminSyncAttempt=info.last_attempt;adminSyncWasRunning=info.running;if(info.running)status.textContent='뉴스 통합 수집 중…';else if(info.error)status.textContent='통합 수집 일부 실패 · '+info.error;else if(info.last_auto_success)status.textContent='최근 자동수집: '+new Date(info.last_auto_success).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' 완료';else status.textContent='자동수집 완료 기록 없음';}
- catch(e){const status=$('#adminSyncStatus');if(status)status.textContent='수집 상태 확인 실패';}finally{adminStatusBusy=false}
+ try{const data=await api('admin/status');for(const [id,key] of [['scheduleReviewNav','schedule'],['batchButton','batches'],['draftNav','drafts']]){const badge=$('#'+id+' .admin-count');if(badge){const count=data.counts[key]||0;badge.textContent=String(count);badge.hidden=count===0;badge.setAttribute('aria-label',count+'건')}}for(const [id,count] of [['adminScheduleAlert',data.counts.schedule||0],['adminPublicationAlert',(data.counts.batches||0)+(data.counts.drafts||0)]]){const alert=$('#'+id);if(alert){alert.hidden=!count;alert.querySelector('span').textContent=String(count);if(id==='adminPublicationAlert')alert.dataset.hasBatches=String((data.counts.batches||0)>0)}}}
+ catch(e){console.error('검토 건수를 불러오지 못했습니다.',e);}finally{adminStatusBusy=false}
 }
 setInterval(pollAdminStatus,5000);setTimeout(pollAdminStatus,500);
 
