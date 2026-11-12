@@ -1,6 +1,6 @@
 from ocr_engine import recognize_body
 import tempfile
-import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time
+import os, json, sqlite3, secrets, hashlib, io, subprocess, shutil, re, datetime, threading, time, ipaddress
 from pathlib import Path
 from functools import wraps
 from flask import Flask, request, session, jsonify, send_file, render_template, abort
@@ -47,20 +47,95 @@ CREATE INDEX IF NOT EXISTS idx_ocr_runs_page ON ocr_runs(page);
 CREATE INDEX IF NOT EXISTS idx_text_history_page ON text_history(page);''')
         c.execute("INSERT OR IGNORE INTO settings VALUES('organizations',?)",(json.dumps(['포스코노동조합','금속노조 충남지부 현대제철지회','금속노조 현대자동차지부','전국금속노동조합','민주노동자회','신의회','신진회','한길노동자회','대진회'],ensure_ascii=False),))
 init()
+def remove_retired_news_data():
+    """Remove only the retired news module's records and files."""
+    with db() as c:
+        for table in ('news_articles', 'steel_press_articles', 'steel_press_status'):
+            c.execute('DROP TABLE IF EXISTS ' + table)
+        c.executemany('DELETE FROM settings WHERE key=?', [(key,) for key in (
+            'news_filter_version', 'news_category_version',
+            'last_news_sync_at', 'last_auto_news_sync_at')])
+    config = DATA / 'news_config.json'
+    if config.is_file() or config.is_symlink(): config.unlink()
+    previews = DATA / 'news_previews'
+    if previews.is_symlink(): previews.unlink()
+    elif previews.is_dir(): shutil.rmtree(previews)
+
 def stamp(): return datetime.datetime.now().astimezone().isoformat(timespec='seconds')
 def log(c, action, doc=''):
     c.execute('INSERT INTO audit(time,actor,action,doc) VALUES(?,?,?,?)',(stamp(),session.get('user','CLI'),action,doc))
-def protected(admin=False):
+def protected(admin=False, allow_guest_write=False):
     def dec(fn):
         @wraps(fn)
         def wrap(*a,**kw):
             with db() as c: u=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
-            if not u and (admin or request.method not in ('GET','HEAD')): abort(401)
+            if not u and (admin or (request.method not in ('GET','HEAD') and not allow_guest_write)): abort(401)
             if admin and u['role']!='admin': abort(403)
-            if request.method not in ('GET','HEAD') and not secrets.compare_digest(request.headers.get('X-CSRF',''),session.get('csrf','invalid')): abort(403)
+            if request.method not in ('GET','HEAD') and (not session.get('csrf') or not secrets.compare_digest(request.headers.get('X-CSRF',''),session['csrf'])): abort(403)
             return fn(*a,**kw)
         return wrap
     return dec
+def normalized_client_ip(value):
+    try:
+        address=ipaddress.ip_address(value or '')
+        if isinstance(address,ipaddress.IPv6Address) and address.ipv4_mapped:address=address.ipv4_mapped
+        return address
+    except ValueError:return None
+
+def viewer_ip_allowed(c,client):
+    if client is None:return False
+    if client.is_loopback:return True
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+    try:allowed=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):return False
+    return isinstance(allowed,list) and str(client) in allowed
+
+def viewer_ip_restriction_enabled(c):
+    row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_restriction_enabled'").fetchone()
+    return bool(row and row[0]=='1')
+
+@app.before_request
+def restrict_viewer_api():
+    # Use the connection peer, never untrusted forwarding headers.
+    if not request.path.startswith('/api/') or request.path in ('/api/login','/api/logout'):return
+    client=normalized_client_ip(request.remote_addr)
+    with db() as c:
+        if not viewer_ip_restriction_enabled(c):return
+        user=c.execute('SELECT role FROM users WHERE name=?',(session.get('user'),)).fetchone()
+        if user and user['role']=='admin':return
+        if viewer_ip_allowed(c,client):return
+    return jsonify(error='이 PC는 일반 열람 허용 IP에 등록되어 있지 않습니다. 관리자에게 문의하세요.'),403
+
+@app.get('/api/viewer-ips')
+@protected(True)
+def get_viewer_ips():
+    with db() as c:
+        row=c.execute("SELECT value FROM settings WHERE key='viewer_ip_allowlist'").fetchone()
+        enabled=viewer_ip_restriction_enabled(c)
+    try:addresses=json.loads(row[0]) if row else []
+    except (TypeError,ValueError):addresses=[]
+    return jsonify(addresses=addresses,enabled=enabled,client_ip=str(normalized_client_ip(request.remote_addr) or ''))
+
+@app.post('/api/viewer-ips')
+@protected(True)
+def save_viewer_ips():
+    b=request.get_json(silent=True)
+    if not isinstance(b,dict) or not isinstance(b.get('addresses'),list) or len(b['addresses'])>256:abort(400)
+    if 'enabled' in b and type(b['enabled']) is not bool:abort(400)
+    addresses=[]
+    for item in b['addresses']:
+        if not isinstance(item,str) or len(item)>45:abort(400)
+        address=normalized_client_ip(item.strip())
+        if address is None or address.is_unspecified or address.is_multicast:return jsonify(error='올바른 개별 IP 주소를 한 줄에 하나씩 입력하세요.'),400
+        value=str(address)
+        if value not in addresses:addresses.append(value)
+    with db() as c:
+        enabled=b.get('enabled',viewer_ip_restriction_enabled(c))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_allowlist',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(addresses),))
+        c.execute("INSERT INTO settings(key,value) VALUES('viewer_ip_restriction_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",('1' if enabled else '0',))
+        log(c,'일반 열람 IP 설정 변경',('제한 사용' if enabled else '제한 해제')+', '+str(len(addresses))+'개')
+    return jsonify(ok=True,count=len(addresses),enabled=enabled)
+
 @app.after_request
 def headers(r):
     r.headers['Cache-Control']='no-store'; r.headers['X-Content-Type-Options']='nosniff'; r.headers['X-Frame-Options']='DENY'
@@ -109,6 +184,7 @@ def change_password():
 @app.get('/api/me')
 @protected()
 def me():
+    if not session.get('csrf'):session['csrf']=secrets.token_hex(24)
     role=current_role()
     return jsonify(user=session.get('user',''),role=role,csrf=session.get('csrf',''))
 
@@ -484,14 +560,14 @@ def audit():
 import batches
 import sys
 start_batches,process_batch = batches.install(sys.modules[__name__])
-import steel_press
-steel_press.install(sys.modules[__name__])
-import news
-news.install(sys.modules[__name__])
-import memos
-memos.install(sys.modules[__name__])
+import council
+council.install(sys.modules[__name__])
 import regulations
 regulations.install(sys.modules[__name__])
+import occasions
+occasions.install(sys.modules[__name__])
+import training_export
+training_export.install(sys.modules[__name__])
 import financials
 financials.install(sys.modules[__name__])
 import folder_import
@@ -500,10 +576,8 @@ import schedule
 start_schedule=schedule.install(sys.modules[__name__])
 import schedule_intake
 schedule_intake.install(sys.modules[__name__])
-import precision
-precision.install(sys.modules[__name__])
 import auto_sync
-start_auto_sync=auto_sync.install(sys.modules[__name__])
+auto_sync.install(sys.modules[__name__])
 
 def main():
     import argparse,getpass
@@ -527,11 +601,11 @@ def main():
             import fcntl
             fcntl.flock(server_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except OSError:raise SystemExit('Archive is already running with this data folder. Close the other server first.')
+    remove_retired_news_data()
     from waitress import create_server
     server=create_server(app,host=a.host,port=a.port,threads=6,max_request_body_size=65*1024*1024)
     start_batches()
     start_folder_import()
     start_schedule()
-    if a.startup_sync:start_auto_sync()
     print(f'Archive: http://{a.host}:{a.port}');server.run()
 if __name__=='__main__': main()
