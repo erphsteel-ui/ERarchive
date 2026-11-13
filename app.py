@@ -601,6 +601,8 @@ import folder_import
 start_folder_import=folder_import.install(sys.modules[__name__])
 import schedule
 start_schedule=schedule.install(sys.modules[__name__])
+import schedule_import
+schedule_import.install(sys.modules[__name__])
 import schedule_intake
 schedule_intake.install(sys.modules[__name__])
 import auto_sync

@@ -949,3 +949,7 @@ html[data-theme="light"] #scheduleMain .schedule-table td.weekend:not(.schedule-
  #schedulePanel .schedule-view-toggle{display:flex!important;flex:1 1 100%;flex-wrap:nowrap;gap:4px}
  #schedulePanel .schedule-view-toggle button{flex:1 1 0;min-width:0;min-height:40px;padding:4px;font-size:12px}
 }
+
+#scheduleImportDialog{width:min(600px,96vw);max-height:90dvh;overflow:auto}
+.schedule-import-list{max-height:40dvh;overflow:auto;padding-left:1.4em;line-height:1.5}
+.schedule-import-list li{padding:3px 0;overflow-wrap:anywhere}
